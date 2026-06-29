@@ -3,71 +3,81 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POS v1.3</title>
+<title>POS v1.3 FIX</title>
 
 <style>
 body{
     font-family:sans-serif;
-    background:#f3f3f3;
-    padding:15px;
+    background:#f4f4f4;
+    margin:0;
+    padding:12px;
 }
 
 .container{
-    max-width:700px;
+    max-width:720px;
     margin:auto;
 }
 
 h1{
     text-align:center;
+    margin:10px 0 20px;
 }
 
 .card{
     background:#fff;
-    padding:15px;
-    margin-bottom:15px;
-    border-radius:12px;
-    box-shadow:0 2px 8px rgba(0,0,0,.1);
+    padding:14px;
+    margin-bottom:12px;
+    border-radius:14px;
+    box-shadow:0 2px 6px rgba(0,0,0,0.08);
+}
+
+h2{
+    margin:0 0 10px;
+    font-size:18px;
 }
 
 input{
     width:100%;
-    height:45px;
-    font-size:18px;
+    height:42px;
+    font-size:16px;
     text-align:right;
-    margin:5px 0;
+    margin-bottom:10px;
+    border:1px solid #ddd;
+    border-radius:8px;
+    padding:0 10px;
 }
 
 .counter{
     display:flex;
-    justify-content:center;
-    gap:10px;
+    justify-content:space-between;
     align-items:center;
+    margin:8px 0;
 }
 
 .counter button{
-    width:55px;
-    height:55px;
-    font-size:28px;
+    width:48px;
+    height:48px;
     border:none;
-    background:#2196f3;
-    color:#fff;
     border-radius:10px;
+    background:#1976d2;
+    color:#fff;
+    font-size:22px;
 }
 
 .counter span{
-    font-size:22px;
+    font-size:20px;
     width:40px;
     text-align:center;
 }
 
 .taxArea{
     display:flex;
-    gap:10px;
+    gap:8px;
 }
 
 .taxBtn{
     flex:1;
-    height:45px;
+    height:42px;
     border:none;
     border-radius:10px;
     background:#ddd;
@@ -81,49 +91,55 @@ input{
 .action{
     display:flex;
     gap:10px;
+    margin-top:10px;
 }
 
 .calcBtn{
-    flex:1;
-    height:60px;
+    flex:2;
+    height:55px;
     background:#2e7d32;
     color:#fff;
     border:none;
     border-radius:12px;
-    font-size:20px;
 }
 
 .resetBtn{
     flex:1;
-    height:60px;
+    height:55px;
     background:#d32f2f;
     color:#fff;
     border:none;
     border-radius:12px;
-    font-size:20px;
 }
 
 .result{
     background:#fff;
-    padding:15px;
-    border-radius:12px;
-    margin-top:15px;
+    padding:14px;
+    border-radius:14px;
+    margin-top:12px;
 }
 
 .resultRow{
     display:flex;
     justify-content:space-between;
-    font-size:20px;
-    margin:8px 0;
+    font-size:18px;
+    padding:6px 0;
 }
-    </style>
+
+.extBox{
+    background:#fff;
+    padding:14px;
+    border-radius:14px;
+    margin-top:12px;
+    border:2px solid #111;
+}
+</style>
 </head>
 
 <body>
 
 <div class="container">
-
-<h1>POS v1.3</h1>
+<h1>POS v1.3 FIX</h1>
 
 <!-- セット -->
 <div class="card">
@@ -159,9 +175,9 @@ input{
 </div>
 </div>
 
-<!-- ドリンク S -->
+<!-- ドリンクS -->
 <div class="card">
-<h2>ドリンク S</h2>
+<h2>ドリンクS</h2>
 <input id="drinkSPrice" value="1000">
 
 <div class="counter">
@@ -176,9 +192,9 @@ input{
 </div>
 </div>
 
-<!-- ドリンク M -->
+<!-- ドリンクM -->
 <div class="card">
-<h2>ドリンク M</h2>
+<h2>ドリンクM</h2>
 <input id="drinkMPrice" value="2000">
 
 <div class="counter">
@@ -193,9 +209,9 @@ input{
 </div>
 </div>
 
-<!-- ドリンク L -->
+<!-- ドリンクL -->
 <div class="card">
-<h2>ドリンク L</h2>
+<h2>ドリンクL</h2>
 <input id="drinkLPrice" value="3000">
 
 <div class="counter">
@@ -258,7 +274,7 @@ input{
 </div>
 
 <!-- 延長表示（別枠） -->
-<div class="result" style="margin-top:20px; border:2px solid #000;">
+<div class="extBox">
 <div class="resultRow"><span>現在</span><span id="currentTotal">￥0ー</span></div>
 <div class="resultRow"><span>30分</span><span id="next30">￥0ー</span></div>
 <div class="resultRow"><span>60分</span><span id="next60">￥0ー</span></div>
@@ -268,6 +284,7 @@ input{
 
 let setCount=0;
 let nomiCount=0;
+
 let drinkS=0;
 let drinkM=0;
 let drinkL=0;
@@ -275,114 +292,139 @@ let drinkL=0;
 let ext60Count=0;
 let ext30Count=0;
 
+/* 税モード */
 let taxMode={
- set:true,
- nomi:true,
- drinkS:true,
- drinkM:true,
- drinkL:true,
- ext60:true,
- ext30:true
+set:true,
+nomi:true,
+drinkS:true,
+drinkM:true,
+drinkL:true,
+ext60:true,
+ext30:true
 };
 
-function safeMinus(v){
-    return v>0 ? v-1 : 0;
-}
-
+/* DOMショートカット */
 const el = (id)=>document.getElementById(id);
 
+/* マイナス防止 */
+function safeMinus(v){
+return v>0 ? v-1 : 0;
+}
+
+/* 表示更新 */
 function render(){
-    el("setCount").innerText=setCount;
-    el("nomiCount").innerText=nomiCount;
-    el("drinkS").innerText=drinkS;
-    el("drinkM").innerText=drinkM;
-    el("drinkL").innerText=drinkL;
-    el("ext60Count").innerText=ext60Count;
-    el("ext30Count").innerText=ext30Count;
+el("setCount").innerText=setCount;
+el("nomiCount").innerText=nomiCount;
+
+el("drinkS").innerText=drinkS;
+el("drinkM").innerText=drinkM;
+el("drinkL").innerText=drinkL;
+
+el("ext60Count").innerText=ext60Count;
+el("ext30Count").innerText=ext30Count;
 }
 
+/* 税切替 */
 function setTax(type,mode){
-    taxMode[type]=mode;
+taxMode[type]=mode;
 
-    el(type+"Ex").classList.remove("active");
-    el(type+"In").classList.remove("active");
+el(type+"Ex").classList.remove("active");
+el(type+"In").classList.remove("active");
 
-    el(type+(mode?"Ex":"In")).classList.add("active");
+el(type+(mode?"Ex":"In")).classList.add("active");
 }
 
+/* 基本計算 */
 function calcLine(price,count,isEx){
-    if(isEx){
-        return price * count * 1.2;
-    }else{
-        return price * count;
-    }
+let sub = price * count;
+return isEx ? sub * 1.2 : sub;
 }
 
 </script>
 
 <script>
 
+/* =========================
+   メイン計算
+========================= */
 function calc(){
 
-    // セット・指名（税モード反映）
-    let setTotal = calcLine(5000, setCount, taxMode.set);
-    let nomiTotal = calcLine(2000, nomiCount, taxMode.nomi);
+    // セット・指名
+    let setTotal = calcLine(+el("setPrice").value, setCount, taxMode.set);
+    let nomiTotal = calcLine(+el("nomiPrice").value, nomiCount, taxMode.nomi);
 
     // ドリンク
-    let drinkS = calcLine(+el("drinkSPrice").value, drinkS, taxMode.drinkS);
-    let drinkM = calcLine(+el("drinkMPrice").value, drinkM, taxMode.drinkM);
-    let drinkL = calcLine(+el("drinkLPrice").value, drinkL, taxMode.drinkL);
+    let drinkTotal =
+        calcLine(+el("drinkSPrice").value, drinkS, taxMode.drinkS) +
+        calcLine(+el("drinkMPrice").value, drinkM, taxMode.drinkM) +
+        calcLine(+el("drinkLPrice").value, drinkL, taxMode.drinkL);
 
-    let drinkTotal = drinkS + drinkM + drinkL;
-
-    // 延長
+    // 延長（単体計算）
     let ext60 = calcLine(+el("ext60Price").value, ext60Count, taxMode.ext60);
     let ext30 = calcLine(+el("ext30Price").value, ext30Count, taxMode.ext30);
 
     // 合計
-    let sub = setTotal + nomiTotal + drinkTotal + ext60 + ext30;
+    let total = setTotal + nomiTotal + drinkTotal + ext60 + ext30;
 
-    el("subtotal").innerText = Math.round(sub);
-    el("tax").innerText = Math.round(sub * 0.1);
-    el("total").innerText = Math.round(sub);
+    // 表示
+    el("subtotal").innerText = Math.round(total);
+    el("tax").innerText = Math.round(total * 0.1);
+    el("total").innerText = Math.round(total);
 
-    // 延長表示（指名＋セット反映）
-    let baseTotal = sub;
+    // 延長用ベース
+    let base = total;
 
-    let addSetNom = 
-        (setCount * 5000) + 
+    // 延長加算（セット＋指名のみ）
+    let addSetNom =
+        (setCount * 5000) +
         (nomiCount * 2000);
 
-    el("currentTotal").innerText = "￥" + Math.round(baseTotal).toLocaleString() + "ー";
-    el("next30").innerText = "￥" + Math.round(baseTotal + addSetNom).toLocaleString() + "ー";
-    el("next60").innerText = "￥" + Math.round(baseTotal + addSetNom).toLocaleString() + "ー";
+    // 表示（現在）
+    el("currentTotal").innerText =
+        "￥" + Math.round(base).toLocaleString() + "ー";
 
+    // 30分
+    el("next30").innerText =
+        "￥" + Math.round(base + addSetNom).toLocaleString() + "ー";
+
+    // 60分
+    el("next60").innerText =
+        "￥" + Math.round(base + addSetNom).toLocaleString() + "ー";
 }
 
 </script>
 
 <script>
 
+/* =========================
+   リセット
+========================= */
 function resetAll(){
 
-    setCount=0;
-    nomiCount=0;
-    drinkS=0;
-    drinkM=0;
-    drinkL=0;
-    ext60Count=0;
-    ext30Count=0;
+    // カウント初期化
+    setCount = 0;
+    nomiCount = 0;
 
+    drinkS = 0;
+    drinkM = 0;
+    drinkL = 0;
+
+    ext60Count = 0;
+    ext30Count = 0;
+
+    // 表示更新
     render();
 
-    el("setPrice").value=5000;
-    el("nomiPrice").value=2000;
-    el("drinkSPrice").value=1000;
-    el("drinkMPrice").value=2000;
-    el("drinkLPrice").value=3000;
-    el("ext60Price").value=5000;
-    el("ext30Price").value=3000;
+    // 入力値リセット
+    el("setPrice").value = 5000;
+    el("nomiPrice").value = 2000;
+    el("drinkSPrice").value = 1000;
+    el("drinkMPrice").value = 2000;
+    el("drinkLPrice").value = 3000;
+    el("ext60Price").value = 5000;
+    el("ext30Price").value = 3000;
 
+    // 税モード初期化（全部税込→税抜状態）
     taxMode = {
         set:true,
         nomi:true,
@@ -393,11 +435,72 @@ function resetAll(){
         ext30:true
     };
 
-    calc();
+    // 表示も0に戻す
+    el("subtotal").innerText = 0;
+    el("tax").innerText = 0;
+    el("total").innerText = 0;
 
     el("currentTotal").innerText = "￥0ー";
     el("next30").innerText = "￥0ー";
     el("next60").innerText = "￥0ー";
+}
+
+</script>
+
+<script>
+
+/* =========================
+   安全補助関数
+========================= */
+
+/* DOM取得 */
+const el = (id)=>document.getElementById(id);
+
+/* マイナス防止 */
+function safeMinus(v){
+    return v > 0 ? v - 1 : 0;
+}
+
+/* 税計算ロジック */
+function calcLine(price, count, isEx){
+    let sub = price * count;
+
+    // 税抜ON → 1.2倍
+    if(isEx){
+        return sub * 1.2;
+    }
+
+    // 税込 → そのまま
+    return sub;
+}
+
+/* =========================
+   表示更新
+========================= */
+function render(){
+
+    el("setCount").innerText = setCount;
+    el("nomiCount").innerText = nomiCount;
+
+    el("drinkS").innerText = drinkS;
+    el("drinkM").innerText = drinkM;
+    el("drinkL").innerText = drinkL;
+
+    el("ext60Count").innerText = ext60Count;
+    el("ext30Count").innerText = ext30Count;
+}
+
+/* =========================
+   税ボタン切替
+========================= */
+function setTax(type, mode){
+
+    taxMode[type] = mode;
+
+    el(type + "Ex").classList.remove("active");
+    el(type + "In").classList.remove("active");
+
+    el(type + (mode ? "Ex" : "In")).classList.add("active");
 }
 
 </script>
