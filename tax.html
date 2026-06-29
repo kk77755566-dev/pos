@@ -116,7 +116,7 @@ input{
     font-size:20px;
     margin:8px 0;
 }
-</style>
+    </style>
 </head>
 
 <body>
@@ -207,23 +207,6 @@ input{
 <div class="taxArea">
 <button id="drinkLEx" class="taxBtn active" onclick="setTax('drinkL',true)">税抜</button>
 <button id="drinkLIn" class="taxBtn" onclick="setTax('drinkL',false)">税込</button>
-</div>
-</div>
-
-<!-- 60分延長 -->
-<div class="card">
-<h2>60分延長</h2>
-<input id="ext60Price" value="5000">
-
-<div class="counter">
-<button onclick="ext60Count=safeMinus(ext60Count);render()">−</button>
-<span id="ext60Count">0</span>
-<button onclick="ext60Count++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="ext60Ex" class="taxBtn active" onclick="setTax('ext60',true)">税抜</button>
-<button id="ext60In" class="taxBtn" onclick="setTax('ext60',false)">税込</button>
 </div>
 </div>
 
