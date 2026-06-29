@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>POS v1.2</title>
+
+<style>
+body{
+    font-family:sans-serif;
+    background:#f3f3f3;
+    padding:15px;
+}
+
+.container{
+    max-width:700px;
+    margin:auto;
+}
+
+h1{
+    text-align:center;
+}
+
+.card{
+    background:#fff;
+    padding:15px;
+    margin-bottom:15px;
+    border-radius:12px;
+    box-shadow:0 2px 8px rgba(0,0,0,.1);
+}
+
+input{
+    width:100%;
+    height:45px;
+    font-size:18px;
+    text-align:right;
+    margin:5px 0;
+}
+
+.counter{
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    align-items:center;
+}
+
+.counter button{
+    width:55px;
+    height:55px;
+    font-size:28px;
+    border:none;
+    background:#2196f3;
+    color:#fff;
+    border-radius:10px;
+}
+
+.counter span{
+    font-size:22px;
+    width:40px;
+    text-align:center;
+}
+
+.taxArea{
+    display:flex;
+    gap:10px;
+}
+
+.taxBtn{
+    flex:1;
+    height:45px;
+    border:none;
+    border-radius:10px;
+    background:#ddd;
+}
+
+.taxBtn.active{
+    background:#000;
+    color:#fff;
+}
+
+.action{
+    display:flex;
+    gap:10px;
+}
+
+.calcBtn{
+    flex:1;
+    height:60px;
+    background:#2e7d32;
+    color:#fff;
+    border:none;
+    border-radius:12px;
+    font-size:20px;
+}
+
+.resetBtn{
+    flex:1;
+    height:60px;
+    background:#d32f2f;
+    color:#fff;
+    border:none;
+    border-radius:12px;
+    font-size:20px;
+}
+
+.result{
+    background:#fff;
+    padding:15px;
+    border-radius:12px;
+    margin-top:15px;
+}
+
+.resultRow{
+    display:flex;
+    justify-content:space-between;
+    font-size:20px;
+    margin:8px 0;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>POS v1.2</h1>
+
+<!-- セット -->
+<div class="card">
+<h2>セット</h2>
+<input id="setPrice" value="5000">
+
+<div class="counter">
+<button onclick="setCount=safeMinus(setCount);render()">−</button>
+<span id="setCount">0</span>
+<button onclick="setCount++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="setEx" class="taxBtn active" onclick="setTax('set',true)">税抜</button>
+<button id="setIn" class="taxBtn" onclick="setTax('set',false)">税込</button>
+</div>
+</div>
+
+<!-- 指名 -->
+<div class="card">
+<h2>指名</h2>
+<input id="nomiPrice" value="2000">
+
+<div class="counter">
+<button onclick="nomiCount=safeMinus(nomiCount);render()">−</button>
+<span id="nomiCount">0</span>
+<button onclick="nomiCount++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="nomiEx" class="taxBtn active" onclick="setTax('nomi',true)">税抜</button>
+<button id="nomiIn" class="taxBtn" onclick="setTax('nomi',false)">税込</button>
+</div>
+</div>
+
+<!-- ドリンク S -->
+<div class="card">
+<h2>ドリンク S</h2>
+<input id="drinkSPrice" value="1000">
+
+<div class="counter">
+<button onclick="drinkS=safeMinus(drinkS);render()">−</button>
+<span id="drinkS">0</span>
+<button onclick="drinkS++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="drinkSEx" class="taxBtn active" onclick="setTax('drinkS',true)">税抜</button>
+<button id="drinkSIn" class="taxBtn" onclick="setTax('drinkS',false)">税込</button>
+</div>
+</div>
+
+<!-- ドリンク M -->
+<div class="card">
+<h2>ドリンク M</h2>
+<input id="drinkMPrice" value="2000">
+
+<div class="counter">
+<button onclick="drinkM=safeMinus(drinkM);render()">−</button>
+<span id="drinkM">0</span>
+<button onclick="drinkM++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="drinkMEx" class="taxBtn active" onclick="setTax('drinkM',true)">税抜</button>
+<button id="drinkMIn" class="taxBtn" onclick="setTax('drinkM',false)">税込</button>
+</div>
+</div>
+
+<!-- ドリンク L -->
+<div class="card">
+<h2>ドリンク L</h2>
+<input id="drinkLPrice" value="3000">
+
+<div class="counter">
+<button onclick="drinkL=safeMinus(drinkL);render()">−</button>
+<span id="drinkL">0</span>
+<button onclick="drinkL++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="drinkLEx" class="taxBtn active" onclick="setTax('drinkL',true)">税抜</button>
+<button id="drinkLIn" class="taxBtn" onclick="setTax('drinkL',false)">税込</button>
+</div>
+</div>
+
+<!-- 延長 -->
+<div class="card">
+<h2>延長</h2>
+<input id="extPrice" value="5000">
+
+<div class="counter">
+<button onclick="extCount=safeMinus(extCount);render()">−</button>
+<span id="extCount">0</span>
+<button onclick="extCount++;render()">＋</button>
+</div>
+
+<div class="taxArea">
+<button id="extEx" class="taxBtn active" onclick="setTax('ext',true)">税抜</button>
+<button id="extIn" class="taxBtn" onclick="setTax('ext',false)">税込</button>
+</div>
+</div>
+
+<!-- 操作 -->
+<div class="action">
+<button class="calcBtn" onclick="calc()">計算</button>
+<button class="resetBtn" onclick="resetAll()">リセット</button>
+</div>
+
+<!-- 結果 -->
+<div class="result">
+<div class="resultRow"><span>小計</span><span id="subtotal">0</span></div>
+<div class="resultRow"><span>税</span><span id="tax">0</span></div>
+<div class="resultRow"><span>合計</span><span id="total">0</span></div>
+</div>
+
+</div>
+
+<script>
+
+let setCount=0;
+let nomiCount=0;
+let drinkS=0;
+let drinkM=0;
+let drinkL=0;
+let extCount=0;
+
+let taxMode={
+ set:true,
+ nomi:true,
+ drinkS:true,
+ drinkM:true,
+ drinkL:true,
+ ext:true
+};
+
+function safeMinus(v){
+    return v>0 ? v-1 : 0;
+}
+
+const el=id=>document.getElementById(id);
+
+function render(){
+    el("setCount").innerText=setCount;
+    el("nomiCount").innerText=nomiCount;
+    el("drinkS").innerText=drinkS;
+    el("drinkM").innerText=drinkM;
+    el("drinkL").innerText=drinkL;
+    el("extCount").innerText=extCount;
+}
+
+function setTax(type,mode){
+    taxMode[type]=mode;
+
+    el(type+"Ex").classList.remove("active");
+    el(type+"In").classList.remove("active");
+
+    el(type+(mode?"Ex":"In")).classList.add("active");
+}
+
+function calcItem(price,count,isEx){
+
+    let sub=price*count;
+    let tax=0;
+    let total=0;
+
+    if(isEx){
+        tax=sub*0.2;
+        total=sub+tax;
+    }else{
+        total=sub;
+        tax=sub*20/120;
+        sub=total-tax;
+    }
+
+    return{sub,tax,total};
+}
+
+function calc(){
+
+    let r1=calcItem(+el("setPrice").value,setCount,taxMode.set);
+    let r2=calcItem(+el("nomiPrice").value,nomiCount,taxMode.nomi);
+
+    let r3s=calcItem(+el("drinkSPrice").value,drinkS,taxMode.drinkS);
+    let r3m=calcItem(+el("drinkMPrice").value,drinkM,taxMode.drinkM);
+    let r3l=calcItem(+el("drinkLPrice").value,drinkL,taxMode.drinkL);
+
+    let r3={
+        sub:r3s.sub+r3m.sub+r3l.sub,
+        tax:r3s.tax+r3m.tax+r3l.tax,
+        total:r3s.total+r3m.total+r3l.total
+    };
+
+    let r4=calcItem(+el("extPrice").value,extCount,taxMode.ext);
+
+    let sub=r1.sub+r2.sub+r3.sub+r4.sub;
+    let tax=r1.tax+r2.tax+r3.tax+r4.tax;
+    let total=r1.total+r2.total+r3.total+r4.total;
+
+    el("subtotal").innerText=Math.round(sub);
+    el("tax").innerText=Math.round(tax);
+    el("total").innerText=Math.round(total);
+}
+
+function resetAll(){
+
+    setCount=nomiCount=drinkS=drinkM=drinkL=extCount=0;
+
+    render
+
+    el("setPrice").value=5000;
+    el("nomiPrice").value=2000;
+    el("drinkSPrice").value=1000;
+    el("drinkMPrice").value=2000;
+    el("drinkLPrice").value=3000;
+    el("extPrice").value=5000;
+
+    taxMode={set:true,nomi:true,drinkS:true,drinkM:true,drinkL:true,ext:true};
+
+    ["set","nomi","drinkS","drinkM","drinkL","ext"].forEach(t=>{
+        el(t+"Ex").classList.add("active");
+        el(t+"In").classList.remove("active");
+    });
+
+    calc();
+}
+
+render();
+
+</script>
+
+</body>
+</html>
