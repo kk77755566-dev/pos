@@ -359,20 +359,53 @@ el("next60").innerText=yen(current+(ext60Base*1.2));
 }
 
 function resetAll(){
-setCount=nomiCount=drinkS=drinkM=drinkL=0;
-ext30Count=ext60Count=0;
 
-taxMode={set:true,nomi:true,drinkS:true,drinkM:true,drinkL:true,ext30:true,ext60:true};
+setCount=0;
+nomiCount=0;
+drinkS=0;
+drinkM=0;
+drinkL=0;
+ext30Count=0;
+ext60Count=0;
 
+// 税モード完全初期化
+taxMode={
+set:true,
+nomi:true,
+drinkS:true,
+drinkM:true,
+drinkL:true,
+ext30:true,
+ext60:true
+};
+
+// 価格デフォへ戻す
+el("setPrice").value=5000;
+el("nomiPrice").value=2000;
+el("drinkSPrice").value=1000;
+el("drinkMPrice").value=2000;
+el("drinkLPrice").value=3000;
+el("ext30Price").value=3000;
+el("ext60Price").value=5000;
+
+// ★UIボタン状態を強制リセット
+const resetTaxUI = (type)=>{
+    el(type+"Ex").classList.add("active");
+    el(type+"In").classList.remove("active");
+};
+
+resetTaxUI("set");
+resetTaxUI("nomi");
+resetTaxUI("drinkS");
+resetTaxUI("drinkM");
+resetTaxUI("drinkL");
+resetTaxUI("ext30");
+resetTaxUI("ext60");
+
+// 画面更新
 render();
-
-["setPrice","nomiPrice","drinkSPrice","drinkMPrice","drinkLPrice","ext30Price","ext60Price"]
-.forEach(id=>el(id).value=el(id).defaultValue||el(id).value);
-
 calc();
 }
-
-render();
 </script>
 
 </body>
