@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POS v1.3 Canvas</title>
+<title>POS v1.3 Canvas FIX</title>
 
 <style>
 body{
@@ -124,7 +124,7 @@ input{
 
 <div class="container">
 
-<h1>POS v1.3 Canvas</h1>
+<h1>POS v1.3 Canvas FIX</h1>
 
 <!-- セット -->
 <div class="card">
@@ -258,7 +258,7 @@ input{
 <div class="resultRow"><span>合計</span><span id="total">0</span></div>
 </div>
 
-<!-- 延長シミュレーション -->
+<!-- 延長 -->
 <div class="result">
 <div class="resultRow"><span>現在</span><span id="currentTotal">￥0ー</span></div>
 <div class="resultRow"><span>30分延長</span><span id="next30">￥0ー</span></div>
@@ -304,18 +304,9 @@ el(type+"In").classList.remove("active");
 el(type+(mode?"Ex":"In")).classList.add("active");
 }
 
-function calcItem(price,count,isEx){
+function calcItem(price,count){
 let sub=price*count;
-let tax=0,total=0;
-
-if(isEx){
-tax=Math.round(sub*0.2);
-total=sub+tax;
-}else{
-total=sub;
-tax=Math.round(sub*20/120);
-}
-return{sub,tax,total};
+return sub;
 }
 
 function yen(v){
@@ -324,25 +315,24 @@ return "￥"+Math.round(v).toLocaleString()+"ー";
 
 function calc(){
 
-let setR=calcItem(+el("setPrice").value,setCount,taxMode.set);
-let nomiR=calcItem(+el("nomiPrice").value,nomiCount,taxMode.nomi);
+// 税抜・税込すべてそのまま合計（1.2なし）
+let setR=calcItem(+el("setPrice").value,setCount);
+let nomiR=calcItem(+el("nomiPrice").value,nomiCount);
 
-let dS=calcItem(+el("drinkSPrice").value,drinkS,taxMode.drinkS);
-let dM=calcItem(+el("drinkMPrice").value,drinkM,taxMode.drinkM);
-let dL=calcItem(+el("drinkLPrice").value,drinkL,taxMode.drinkL);
+let dS=calcItem(+el("drinkSPrice").value,drinkS);
+let dM=calcItem(+el("drinkMPrice").value,drinkM);
+let dL=calcItem(+el("drinkLPrice").value,drinkL);
 
-let drink={
-sub:dS.sub+dM.sub+dL.sub,
-tax:dS.tax+dM.tax+dL.tax,
-total:dS.total+dM.total+dL.total
-};
+let e30=calcItem(+el("ext30Price").value,ext30Count);
+let e60=calcItem(+el("ext60Price").value,ext60Count);
 
-let e30=calcItem(+el("ext30Price").value,ext30Count,taxMode.ext30);
-let e60=calcItem(+el("ext60Price").value,ext60Count,taxMode.ext60);
+let sub=setR+nomiR+dS+dM+dL+e30+e60;
 
-let sub=setR.sub+nomiR.sub+drink.sub+e30.sub+e60.sub;
-let tax=setR.tax+nomiR.tax+drink.tax+e30.tax+e60.tax;
-let total=setR.total+nomiR.total+drink.total+e30.total+e60.total;
+// ★仕様通り：税＝税抜+税込（=全体合計）
+let tax=sub;
+
+// 合計
+let total=sub+tax;
 
 el("subtotal").innerText=Math.round(sub);
 el("tax").innerText=Math.round(tax);
@@ -360,26 +350,19 @@ el("next60").innerText=yen(current+(ext60Base*1.2));
 
 function resetAll(){
 
-setCount=0;
-nomiCount=0;
-drinkS=0;
-drinkM=0;
-drinkL=0;
-ext30Count=0;
-ext60Count=0;
+setCount=nomiCount=drinkS=drinkM=drinkL=0;
+ext30Count=ext60Count=0;
 
-// 税モード完全初期化
-taxMode={
-set:true,
-nomi:true,
-drinkS:true,
-drinkM:true,
-drinkL:true,
-ext30:true,
-ext60:true
-};
+taxMode={set:true,nomi:true,drinkS:true,drinkM:true,drinkL:true,ext30:true,ext60:true};
 
-// 価格デフォへ戻す
+render();
+
+// ボタン状態リセット
+["set","nomi","drinkS","drinkM","drinkL","ext30","ext60"].forEach(t=>{
+el(t+"Ex").classList.add("active");
+el(t+"In").classList.remove("active");
+});
+
 el("setPrice").value=5000;
 el("nomiPrice").value=2000;
 el("drinkSPrice").value=1000;
@@ -388,24 +371,10 @@ el("drinkLPrice").value=3000;
 el("ext30Price").value=3000;
 el("ext60Price").value=5000;
 
-// ★UIボタン状態を強制リセット
-const resetTaxUI = (type)=>{
-    el(type+"Ex").classList.add("active");
-    el(type+"In").classList.remove("active");
-};
-
-resetTaxUI("set");
-resetTaxUI("nomi");
-resetTaxUI("drinkS");
-resetTaxUI("drinkM");
-resetTaxUI("drinkL");
-resetTaxUI("ext30");
-resetTaxUI("ext60");
-
-// 画面更新
-render();
 calc();
 }
+
+render();
 </script>
 
 </body>
