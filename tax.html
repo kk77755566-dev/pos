@@ -3,407 +3,253 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>POS v1.3</title>
+<title>POS v1.3.1</title>
 
 <style>
 body{
-    font-family:sans-serif;
-    background:#f3f3f3;
-    padding:15px;
-}
-
-.container{
-    max-width:700px;
-    margin:auto;
+    font-family: sans-serif;
+    background:#111;
+    color:#fff;
+    margin:0;
+    padding:20px;
 }
 
 h1{
-    text-align:center;
+    font-size:20px;
+    margin-bottom:10px;
 }
 
-.card{
-    background:#fff;
+.box{
+    background:#1e1e1e;
     padding:15px;
+    border-radius:10px;
     margin-bottom:15px;
-    border-radius:12px;
-    box-shadow:0 2px 8px rgba(0,0,0,.1);
 }
 
-input{
-    width:100%;
-    height:45px;
-    font-size:18px;
-    text-align:right;
-    margin:5px 0;
-}
-
-.counter{
-    display:flex;
-    justify-content:center;
-    gap:10px;
-    align-items:center;
-}
-
-.counter button{
-    width:55px;
-    height:55px;
-    font-size:28px;
-    border:none;
-    background:#2196f3;
-    color:#fff;
-    border-radius:10px;
-}
-
-.counter span{
-    font-size:22px;
-    width:40px;
-    text-align:center;
-}
-
-.taxArea{
-    display:flex;
-    gap:10px;
-}
-
-.taxBtn{
-    flex:1;
-    height:45px;
-    border:none;
-    border-radius:10px;
-    background:#ddd;
-}
-
-.taxBtn.active{
-    background:#000;
-    color:#fff;
-}
-
-.action{
-    display:flex;
-    gap:10px;
-}
-
-.calcBtn{
-    flex:1;
-    height:60px;
-    background:#2e7d32;
-    color:#fff;
-    border:none;
-    border-radius:12px;
-    font-size:20px;
-}
-
-.resetBtn{
-    flex:1;
-    height:60px;
-    background:#d32f2f;
-    color:#fff;
-    border:none;
-    border-radius:12px;
-    font-size:20px;
-}
-
-.result{
-    background:#fff;
-    padding:15px;
-    border-radius:12px;
-    margin-top:15px;
-}
-
-.resultRow{
+.row{
     display:flex;
     justify-content:space-between;
-    font-size:20px;
+    align-items:center;
     margin:8px 0;
+}
+
+button{
+    padding:8px 12px;
+    margin:2px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:14px;
+}
+
+.plus{background:#2ecc71;color:#fff;}
+.minus{background:#e74c3c;color:#fff;}
+.reset{background:#f39c12;color:#000;}
+
+.value{
+    font-size:18px;
+    font-weight:bold;
+}
+
+.total{
+    font-size:22px;
+    color:#00ffcc;
+    font-weight:bold;
+}
+
+.small{
+    font-size:13px;
+    opacity:0.8;
 }
 </style>
 </head>
 
 <body>
 
-<div class="container">
+<h1>POS v1.3.1</h1>
 
-<h1>POS v1.3</h1>
+<div class="box">
 
-<!-- セット -->
-<div class="card">
-<h2>セット</h2>
-<input id="setPrice" value="5000">
-
-<div class="counter">
-<button onclick="setCount=safeMinus(setCount);render()">−</button>
-<span id="setCount">0</span>
-<button onclick="setCount++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="setEx" class="taxBtn active" onclick="setTax('set',true)">税抜</button>
-<button id="setIn" class="taxBtn" onclick="setTax('set',false)">税込</button>
+<div class="row">
+<span>セット</span>
+<div>
+<button class="minus" onclick="chg('set',-1)">-</button>
+<span id="set" class="value">0</span>
+<button class="plus" onclick="chg('set',1)">+</button>
 </div>
 </div>
 
-<!-- 指名 -->
-<div class="card">
-<h2>指名</h2>
-<input id="nomiPrice" value="2000">
-
-<div class="counter">
-<button onclick="nomiCount=safeMinus(nomiCount);render()">−</button>
-<span id="nomiCount">0</span>
-<button onclick="nomiCount++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="nomiEx" class="taxBtn active" onclick="setTax('nomi',true)">税抜</button>
-<button id="nomiIn" class="taxBtn" onclick="setTax('nomi',false)">税込</button>
+<div class="row">
+<span>指名</span>
+<div>
+<button class="minus" onclick="chg('shimei',-1)">-</button>
+<span id="shimei" class="value">0</span>
+<button class="plus" onclick="chg('shimei',1)">+</button>
 </div>
 </div>
 
-<!-- ドリンクS -->
-<div class="card">
-<h2>ドリンク S</h2>
-<input id="drinkSPrice" value="1000">
-
-<div class="counter">
-<button onclick="drinkS=safeMinus(drinkS);render()">−</button>
-<span id="drinkS">0</span>
-<button onclick="drinkS++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="drinkSEx" class="taxBtn active" onclick="setTax('drinkS',true)">税抜</button>
-<button id="drinkSIn" class="taxBtn" onclick="setTax('drinkS',false)">税込</button>
+<div class="row">
+<span>ドリンクS</span>
+<div>
+<button class="minus" onclick="chg('drinkS',-1)">-</button>
+<span id="drinkS" class="value">0</span>
+<button class="plus" onclick="chg('drinkS',1)">+</button>
 </div>
 </div>
 
-<!-- ドリンクM -->
-<div class="card">
-<h2>ドリンク M</h2>
-<input id="drinkMPrice" value="2000">
-
-<div class="counter">
-<button onclick="drinkM=safeMinus(drinkM);render()">−</button>
-<span id="drinkM">0</span>
-<button onclick="drinkM++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="drinkMEx" class="taxBtn active" onclick="setTax('drinkM',true)">税抜</button>
-<button id="drinkMIn" class="taxBtn" onclick="setTax('drinkM',false)">税込</button>
+<div class="row">
+<span>ドリンクM</span>
+<div>
+<button class="minus" onclick="chg('drinkM',-1)">-</button>
+<span id="drinkM" class="value">0</span>
+<button class="plus" onclick="chg('drinkM',1)">+</button>
 </div>
 </div>
 
-<!-- ドリンクL -->
-<div class="card">
-<h2>ドリンク L</h2>
-<input id="drinkLPrice" value="3000">
-
-<div class="counter">
-<button onclick="drinkL=safeMinus(drinkL);render()">−</button>
-<span id="drinkL">0</span>
-<button onclick="drinkL++;render()">＋</button>
-</div>
-
-<div class="taxArea">
-<button id="drinkLEx" class="taxBtn active" onclick="setTax('drinkL',true)">税抜</button>
-<button id="drinkLIn" class="taxBtn" onclick="setTax('drinkL',false)">税込</button>
+<div class="row">
+<span>ドリンクL</span>
+<div>
+<button class="minus" onclick="chg('drinkL',-1)">-</button>
+<span id="drinkL" class="value">0</span>
+<button class="plus" onclick="chg('drinkL',1)">+</button>
 </div>
 </div>
 
-<!-- 60分延長 -->
-<div class="card">
-<h2>60分延長</h2>
-<input id="ext60Price" value="5000">
-
-<div class="counter">
-<button onclick="ext60Count=safeMinus(ext60Count);render()">−</button>
-<span id="ext60Count">0</span>
-<button onclick="ext60Count++;render()">＋</button>
 </div>
 
-<div class="taxArea">
-<button id="ext60Ex" class="taxBtn active" onclick="setTax('ext60',true)">税抜</button>
-<button id="ext60In" class="taxBtn" onclick="setTax('ext60',false)">税込</button>
+<div class="box">
+<div class="row">
+<span>現在合計</span>
+<span id="total" class="total">0円</span>
+</div>
+
+<div class="small">
+税抜＝(指名+ドリンク)×1.2<br>
+税込＝セット
 </div>
 </div>
 
-<!-- 30分延長 -->
-<div class="card">
-<h2>30分延長</h2>
-<input id="ext30Price" value="3000">
+<div class="box">
 
-<div class="counter">
-<button onclick="ext30Count=safeMinus(ext30Count);render()">−</button>
-<span id="ext30Count">0</span>
-<button onclick="ext30Count++;render()">＋</button>
+<div class="row">
+<button onclick="setTax(false)" id="taxBtn1">税抜</button>
+<button onclick="setTax(true)" id="taxBtn2">税込</button>
+<button class="reset" onclick="resetAll()">リセット</button>
 </div>
 
-<div class="taxArea">
-<button id="ext30Ex" class="taxBtn active" onclick="setTax('ext30',true)">税抜</button>
-<button id="ext30In" class="taxBtn" onclick="setTax('ext30',false)">税込</button>
-</div>
 </div>
 
-<!-- 操作 -->
-<div class="action">
-<button class="calcBtn" onclick="calc()">計算</button>
-<button class="resetBtn" onclick="resetAll()">リセット</button>
+<div class="box">
+<h3>延長シミュレーション</h3>
+
+<div class="row">
+<span>30分</span>
+<span id="ext30">0円</span>
 </div>
 
-<!-- 結果（確定会計） -->
-<div class="result">
-<div class="resultRow"><span>小計</span><span id="subtotal">0</span></div>
-<div class="resultRow"><span>税</span><span id="tax">0</span></div>
-<div class="resultRow"><span>合計</span><span id="total">0</span></div>
-</div>
-
-<!-- シミュレーション（別枠） -->
-<div class="result">
-<div class="resultRow"><span>現在</span><span id="currentTotal">￥0ー</span></div>
-<div class="resultRow"><span>30分延長</span><span id="next30">￥0ー</span></div>
-<div class="resultRow"><span>60分延長</span><span id="next60">￥0ー</span></div>
+<div class="row">
+<span>60分</span>
+<span id="ext60">0円</span>
 </div>
 
 </div>
 
 <script>
-let setCount=0;
-let nomiCount=0;
-let drinkS=0;
-let drinkM=0;
-let drinkL=0;
-let ext60Count=0;
-let ext30Count=0;
 
-let taxMode={
- set:true,
- nomi:true,
- drinkS:true,
- drinkM:true,
- drinkL:true,
- ext60:true,
- ext30:true
+let data = {
+set:0,
+shimei:0,
+drinkS:0,
+drinkM:0,
+drinkL:0,
+tax:true
 };
 
-const el=id=>document.getElementById(id);
-
-function safeMinus(v){
-    return v>0 ? v-1 : 0;
+function chg(key,val){
+data[key]+=val;
+if(data[key]<0)data[key]=0;
+update();
 }
 
-function render(){
-    el("setCount").innerText=setCount;
-    el("nomiCount").innerText=nomiCount;
-    el("drinkS").innerText=drinkS;
-    el("drinkM").innerText=drinkM;
-    el("drinkL").innerText=drinkL;
-    el("ext60Count").innerText=ext60Count;
-    el("ext30Count").innerText=ext30Count;
-}
-
-function setTax(type,mode){
-    taxMode[type]=mode;
-    el(type+"Ex").classList.remove("active");
-    el(type+"In").classList.remove("active");
-    el(type+(mode?"Ex":"In")).classList.add("active");
-}
-
-function calcItem(price,count,isEx){
-    let sub=price*count;
-    let tax=0;
-    let total=0;
-
-    if(isEx){
-        tax=Math.round(sub*0.2);
-        total=sub+tax;
-    }else{
-        total=sub;
-        tax=Math.round(sub*20/120);
-        sub=total-tax;
-    }
-    return{sub,tax,total};
-}
-
-function yen(v){
-    return "￥" + Math.round(v).toLocaleString() + "ー";
+function setTax(flag){
+data.tax=flag;
+update();
 }
 
 function calc(){
 
-    let r1=calcItem(+el("setPrice").value,setCount,taxMode.set);
-    let r2=calcItem(+el("nomiPrice").value,nomiCount,taxMode.nomi);
+let setPrice = data.set * 3000;
 
-    let r3s=calcItem(+el("drinkSPrice").value,drinkS,taxMode.drinkS);
-    let r3m=calcItem(+el("drinkMPrice").value,drinkM,taxMode.drinkM);
-    let r3l=calcItem(+el("drinkLPrice").value,drinkL,taxMode.drinkL);
+let drink =
+(data.drinkS*1000) +
+(data.drinkM*2000) +
+(data.drinkL*3000);
 
-    let drink={
-        sub:r3s.sub+r3m.sub+r3l.sub,
-        tax:r3s.tax+r3m.tax+r3l.tax,
-        total:r3s.total+r3m.total+r3l.total
-    };
+let shimei = data.shimei * 2000;
 
-    let r4=calcItem(+el("ext60Price").value,ext60Count,taxMode.ext60);
-    let r5=calcItem(+el("ext30Price").value,ext30Count,taxMode.ext30);
+let taxable = (drink + shimei) * 1.2;
 
-    let sub=r1.sub+r2.sub+drink.sub+r4.sub+r5.sub;
-    let tax=r1.tax+r2.tax+drink.tax+r4.tax+r5.tax;
-    let total=r1.total+r2.total+drink.total+r4.total+r5.total;
+let total = setPrice + taxable;
 
-    el("subtotal").innerText=Math.round(sub);
-    el("tax").innerText=Math.round(tax);
-    el("total").innerText=Math.round(total);
+return {setPrice, taxable, total};
+}
 
-    const current = total;
+function extCalc(baseSet){
 
-    const set = setCount;
-    const nomi = nomiCount;
+let setPrice = baseSet * 3000;
 
-    const ext30Base = (set * 3000) + (nomi * 2000);
-    const ext60Base = (set * 5000) + (nomi * 2000);
+let drink =
+(data.drinkS*1000) +
+(data.drinkM*2000) +
+(data.drinkL*3000);
 
-    el("currentTotal").innerText = yen(current);
-    el("next30").innerText = yen(current + (ext30Base * 1.2));
-    el("next60").innerText = yen(current + (ext60Base * 1.2));
+let shimei = data.shimei * 2000;
+
+let total = (setPrice + drink + shimei) * 1.2;
+
+return total;
+}
+
+function update(){
+
+let c = calc();
+
+document.getElementById("set").innerText=data.set;
+document.getElementById("shimei").innerText=data.shimei;
+document.getElementById("drinkS").innerText=data.drinkS;
+document.getElementById("drinkM").innerText=data.drinkM;
+document.getElementById("drinkL").innerText=data.drinkL;
+
+document.getElementById("total").innerText=
+Math.floor(c.total)+"円";
+
+document.getElementById("ext30").innerText=
+Math.floor(extCalc(data.set+1))+"円";
+
+document.getElementById("ext60").innerText=
+Math.floor(extCalc(data.set+2))+"円";
+
+document.getElementById("taxBtn1").style.opacity=data.tax?0.5:1;
+document.getElementById("taxBtn2").style.opacity=data.tax?1:0.5;
+
 }
 
 function resetAll(){
-    setCount=0;
-    nomiCount=0;
-    drinkS=0;
-    drinkM=0;
-    drinkL=0;
-    ext60Count=0;
-    ext30Count=0;
 
-    render();
+data={
+set:0,
+shimei:0,
+drinkS:0,
+drinkM:0,
+drinkL:0,
+tax:true
+};
 
-    el("setPrice").value=5000;
-    el("nomiPrice").value=2000;
-    el("drinkSPrice").value=1000;
-    el("drinkMPrice").value=2000;
-    el("drinkLPrice").value=3000;
-    el("ext60Price").value=5000;
-    el("ext30Price").value=3000;
-
-    taxMode={
-        set:true,
-        nomi:true,
-        drinkS:true,
-        drinkM:true,
-        drinkL:true,
-        ext60:true,
-        ext30:true
-    };
-
-    calc();
-
-    el("currentTotal").innerText="￥0ー";
-    el("next30").innerText="￥0ー";
-    el("next60").innerText="￥0ー";
+update();
 }
 
-render();
+update();
+
 </script>
 
 </body>
