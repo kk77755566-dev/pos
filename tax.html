@@ -188,11 +188,22 @@ const el=id=>document.getElementById(id);
 
 function safeMinus(v){return v>0?v-1:0;}
 
-function setTax(type,mode){
-el(type+"Ex").classList.remove("active");
-el(type+"In").classList.remove("active");
-el(type+(mode?"Ex":"In")).classList.add("active");
-el(type).dataset.tax = mode ? "1" : "0";
+function setTax(type, mode){
+    taxMode[type] = mode;
+
+    const ex = document.getElementById(type+"Ex");
+    const inb = document.getElementById(type+"In");
+
+    if(ex && inb){
+        ex.classList.remove("active");
+        inb.classList.remove("active");
+
+        if(mode){
+            inb.classList.add("active");
+        }else{
+            ex.classList.add("active");
+        }
+    }
 }
 
 function calc(){
