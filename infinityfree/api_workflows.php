@@ -208,7 +208,7 @@ if ($route === 'closings/run') {
     ];
     foreach($checks as [$code,$sql,$label]){$q=$wfdb->prepare($sql);$q->execute([$store,$date]);$n=(int)$q->fetchColumn();if($n)$errors[]=['code'=>$code,'description'=>$label.' '.$n.'件'];}
     $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
-    $q=$wfdb->prepare('SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status='closed' ORDER BY id');$q->execute([$store,$date]);$sessions=$q->fetchAll();
+    $q=$wfdb->prepare("SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status='closed' ORDER BY id");$q->execute([$store,$date]);$sessions=$q->fetchAll();
     $subtotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
     foreach($sessions as $session){
         $sid=(int)$session['id'];
