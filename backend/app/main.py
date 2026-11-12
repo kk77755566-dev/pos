@@ -1055,3 +1055,57 @@ def get_daily_closing(business_date: str, user: dict[str, Any] = Depends(current
             return {"closing": closing, "errors": errors}
     finally:
         conn.close()
+
+
+@app.get("/api/products")
+def list_products(user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,product_name,selling_price,back_rate,back_type
+                     FROM products WHERE store_id=%s AND is_active=1
+                    ORDER BY category_id,id""",
+                (user["store_id"],),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+@app.get("/api/set-menus")
+def list_set_menus(user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,name,duration_minutes,price,is_extension
+                     FROM set_menus WHERE store_id=%s AND is_active=1
+                    ORDER BY sort_order,id""",
+                (user["store_id"],),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
+
+
+@app.get("/api/casts")
+def list_casts(user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,cast_code,cast_name,hourly_wage
+                     FROM casts WHERE store_id=%s AND is_active=1
+                    ORDER BY cast_name,id""",
+                (user["store_id"],),
+            )
+            return cur.fetchall()
+    finally:
+        conn.close()
