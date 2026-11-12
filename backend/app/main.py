@@ -1513,3 +1513,29 @@ def update_store_settings(body: StoreSettingsUpdate, user: dict[str, Any] = Depe
         raise HTTPException(status_code=503,detail="Settings update failed") from None
     finally:
         conn.close()
+
+
+@app.get("/api/settings")
+def get_store_settings(user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT tax_enabled,tax_rate,tax_mode,service_enabled,service_rate,
+                          service_mode,service_fixed_amount,service_taxable,service_basis,
+                          work_rounding_minutes,work_rounding_mode,auto_close_enabled,auto_close_time
+                     FROM store_settings WHERE store_id=%s""",
+                (user["store_id"],),
+            )
+            row=cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404,detail="Store settings not found")
+            for key,value in list(row.items()):
+                if isinstance(value,Decimal):
+                    row[key]=str(value)
+                elif hasattr(value,"isoformat"):
+                    row[key]=value.isoformat()
+            return row
+    finally:
+        conn.close()
