@@ -3,6 +3,19 @@ declare(strict_types=1);
 /* Additional same-origin workflows. Included by api.php after authentication. */
 $wfdb = pdo();
 
+/* Store-scoped master-data maintenance. Soft-disable preserves historical snapshots. */
+if ($method === 'GET' && $route === 'expenses') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $date=(string)($_GET['business_date']??businessDate(pdo(),$store));
+    $q=pdo()->prepare('SELECT id,business_date,category,amount,description FROM expenses WHERE store_id=? AND business_date=? ORDER BY id DESC');$q->execute([$store,$date]);respond(200,['data'=>$q->fetchAll()]);
+}
+if ($method === 'GET' && $route === 'closings') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $date=(string)($_GET['business_date']??businessDate(pdo(),$store));
+    $q=pdo()->prepare('SELECT * FROM daily_closings WHERE store_id=? AND business_date=?');$q->execute([$store,$date]);$c=$q->fetch();
+    if($c){$q=pdo()->prepare('SELECT error_code,description,resolved_at FROM closing_errors WHERE store_id=? AND daily_closing_id=? ORDER BY id');$q->execute([$store,$c['id']]);$c['errors']=$q->fetchAll();}
+    respond(200,['data'=>$c]);
+}
 if ($method === 'GET' && $route === 'settings') {
     $q=$wfdb->prepare('SELECT tax_enabled,tax_rate,tax_mode,service_enabled,service_rate,service_mode,service_fixed_amount,service_taxable,service_basis,rounding_mode,work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');
     $q->execute([$store]); respond(200,['data'=>$q->fetch() ?: []]);
@@ -38,6 +51,56 @@ if ($method === 'GET' && $route === 'payroll') {
 if (!in_array($method,['POST','PUT'],true)) return;
 csrf(); staff($u); $d=input();
 
+/* Master data CRUD: create and update only; delete is always a soft-disable. */
+if ($route==='tables' && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $name=trim((string)($d['table_name']??''));$capacity=(int)($d['capacity']??4);
+    if($name===''||mb_strlen($name)>40||$capacity<1||$capacity>100)respond(422,['error'=>'卓情報が不正です']);
+    $q=$wfdb->prepare("INSERT INTO tables(store_id,table_name,capacity,status,is_active) VALUES(?,?,?,'available',1)");$q->execute([$store,$name,$capacity]);respond(201,['id'=>(int)$wfdb->lastInsertId()]);
+}
+if (preg_match('#^tables/([0-9]+)$#',$route,$m) && $method==='PUT') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $id=(int)$m[1];$name=trim((string)($d['table_name']??''));$capacity=(int)($d['capacity']??4);$active=(int)!!($d['is_active']??true);
+    if($name===''||mb_strlen($name)>40||$capacity<1||$capacity>100)respond(422,['error'=>'卓情報が不正です']);
+    $q=$wfdb->prepare("SELECT COUNT(*) FROM table_sessions WHERE store_id=? AND table_id=? AND status IN ('open','checkout')");$q->execute([$store,$id]);if(!$active&&(int)$q->fetchColumn()>0)respond(409,['error'=>'利用中の卓は停止できません']);
+    $q=$wfdb->prepare('UPDATE tables SET table_name=?,capacity=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$name,$capacity,$active,$store,$id]);if(!$q->rowCount()){$q=$wfdb->prepare('SELECT id FROM tables WHERE store_id=? AND id=?');$q->execute([$store,$id]);if(!$q->fetch())respond(404,['error'=>'卓が見つかりません']);}respond(200,['ok'=>true]);
+}
+if ($route==='products' && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $name=trim((string)($d['product_name']??''));$price=(float)($d['selling_price']??-1);$rate=(float)($d['back_rate']??0);$type=(string)($d['back_type']??'percentage');
+    if($name===''||mb_strlen($name)>120||$price<0||$rate<0||!in_array($type,['percentage','fixed_per_unit','none'],true)||($type==='percentage'&&$rate>100))respond(422,['error'=>'商品情報が不正です']);
+    $q=$wfdb->prepare('INSERT INTO products(store_id,product_name,selling_price,back_rate,back_type,is_active) VALUES(?,?,?,?,?,1)');$q->execute([$store,$name,$price,$rate,$type]);respond(201,['id'=>(int)$wfdb->lastInsertId()]);
+}
+if (preg_match('#^products/([0-9]+)$#',$route,$m) && $method==='PUT') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $id=(int)$m[1];$name=trim((string)($d['product_name']??''));$price=(float)($d['selling_price']??-1);$rate=(float)($d['back_rate']??0);$type=(string)($d['back_type']??'percentage');$active=(int)!!($d['is_active']??true);
+    if($name===''||mb_strlen($name)>120||$price<0||$rate<0||!in_array($type,['percentage','fixed_per_unit','none'],true)||($type==='percentage'&&$rate>100))respond(422,['error'=>'商品情報が不正です']);
+    $q=$wfdb->prepare('UPDATE products SET product_name=?,selling_price=?,back_rate=?,back_type=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$name,$price,$rate,$type,$active,$store,$id]);respond(200,['ok'=>true]);
+}
+if ($route==='sets' && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $name=trim((string)($d['name']??''));$minutes=(int)($d['duration_minutes']??0);$price=(float)($d['price']??-1);$extension=(int)!!($d['is_extension']??false);
+    if($name===''||mb_strlen($name)>120||$minutes<1||$minutes>1440||$price<0)respond(422,['error'=>'セット情報が不正です']);
+    $q=$wfdb->prepare('INSERT INTO set_menus(store_id,name,duration_minutes,price,is_extension,is_active) VALUES(?,?,?,?,?,1)');$q->execute([$store,$name,$minutes,$price,$extension]);respond(201,['id'=>(int)$wfdb->lastInsertId()]);
+}
+if (preg_match('#^sets/([0-9]+)$#',$route,$m) && $method==='PUT') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $id=(int)$m[1];$name=trim((string)($d['name']??''));$minutes=(int)($d['duration_minutes']??0);$price=(float)($d['price']??-1);$extension=(int)!!($d['is_extension']??false);$active=(int)!!($d['is_active']??true);
+    if($name===''||mb_strlen($name)>120||$minutes<1||$minutes>1440||$price<0)respond(422,['error'=>'セット情報が不正です']);
+    $q=$wfdb->prepare('UPDATE set_menus SET name=?,duration_minutes=?,price=?,is_extension=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$name,$minutes,$price,$extension,$active,$store,$id]);respond(200,['ok'=>true]);
+}
+if ($route==='casts' && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $code=trim((string)($d['cast_code']??''));$name=trim((string)($d['cast_name']??''));$wage=(float)($d['hourly_wage']??-1);
+    if($code===''||mb_strlen($code)>40||$name===''||mb_strlen($name)>120||$wage<0)respond(422,['error'=>'キャスト情報が不正です']);
+    $q=$wfdb->prepare('INSERT INTO casts(store_id,cast_code,cast_name,hourly_wage,is_active) VALUES(?,?,?,?,1)');$q->execute([$store,$code,$name,$wage]);respond(201,['id'=>(int)$wfdb->lastInsertId()]);
+}
+if (preg_match('#^casts/([0-9]+)$#',$route,$m) && $method==='PUT') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
+    $id=(int)$m[1];$code=trim((string)($d['cast_code']??''));$name=trim((string)($d['cast_name']??''));$wage=(float)($d['hourly_wage']??-1);$active=(int)!!($d['is_active']??true);
+    if($code===''||mb_strlen($code)>40||$name===''||mb_strlen($name)>120||$wage<0)respond(422,['error'=>'キャスト情報が不正です']);
+    $q=$wfdb->prepare('UPDATE casts SET cast_code=?,cast_name=?,hourly_wage=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$code,$name,$wage,$active,$store,$id]);respond(200,['ok'=>true]);
+}
 if ($route === 'settings') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
     $minutes=(int)($d['work_rounding_minutes']??15);
