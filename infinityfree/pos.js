@@ -52,5 +52,8 @@ $('stopset').onclick=()=>run(async()=>{const s=data.sets.find(x=>x.id==$('editse
 $('editcast').onchange=()=>{const c=data.casts.find(x=>x.id==$('editcast').value);if(c){$('editcastcode').value=c.cast_code;$('editcastname').value=c.cast_name;$('editcastwage').value=c.hourly_wage}};
 $('updatecast').onclick=()=>run(async()=>{const c=data.casts.find(x=>x.id==$('editcast').value);if(!c)throw Error('キャストを選択してください');return api('casts/'+c.id,'PUT',{cast_code:$('editcastcode').value,cast_name:$('editcastname').value,hourly_wage:+$('editcastwage').value,is_active:true})});
 $('stopcast').onclick=()=>run(async()=>{const c=data.casts.find(x=>x.id==$('editcast').value);if(!c||!confirm('キャストを利用停止しますか？'))return;return api('casts/'+c.id,'PUT',{cast_code:c.cast_code,cast_name:c.cast_name,hourly_wage:+c.hourly_wage,is_active:false})});
+async function showAttendance(){const r=await api('attendance');$('attendanceList').textContent=JSON.stringify(r.data,null,2)}
+$('refreshAttendance').onclick=()=>run(showAttendance);
+$('savebreak').onclick=()=>run(async()=>{const r=await api('attendance/break','POST',{attendance_id:+$('attendanceid').value,break_minutes:+$('breakminutes').value});await showAttendance();return r});
 $('paydate').value=dateNow();$('closedate').value=dateNow();
 (async()=>{try{const t=await api('csrf');csrfToken=t.csrf;await reload();say('POSに接続しました。')}catch(e){say(e.message)}})();
