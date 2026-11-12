@@ -24,7 +24,7 @@ async function reload(){
 async function run(fn){try{say(await fn());await reload()}catch(e){say(e.message)}}
 $('refresh').onclick=()=>run(reload);
 $('seat').onclick=()=>run(async()=>api('sessions','POST',{table_id:+$('tableid').value,customer_count:+$('people').value,idempotency_key:key()}));
-$('addset').onclick=()=>run(async()=>api('sessions/'+$('session').value+'/sets','POST',{set_menu_id:+$('setmenu').value}));
+$('addset').onclick=()=>run(async()=>api('sessions/'+$('session').value+'/sets','POST',{set_menu_id:+$('setmenu').value,idempotency_key:key()}));
 $('order').onclick=()=>run(async()=>{const ids=[...$('cast').selectedOptions].map(o=>+o.value);const allocations=ids.map(id=>({cast_id:id,allocation_rate:100/Math.max(ids.length,1)}));return api('orders','POST',{session_id:+$('ordersession').value,idempotency_key:key(),items:[{product_id:+$('product').value,quantity:+$('qty').value,allocations}]})});
 $('bill').onclick=()=>run(async()=>{const b=await api('sessions/'+$('billsession').value+'/bill');$('payamount').value=b.balance;say(b);return b});
 $('pay').onclick=()=>run(async()=>api('payments','POST',{session_id:+$('billsession').value,payment_method:$('method').value,amount:+$('payamount').value,idempotency_key:key()}));
