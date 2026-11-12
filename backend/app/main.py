@@ -11,6 +11,7 @@ import json
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import bcrypt
 import jwt
@@ -219,6 +220,16 @@ class OrderCreateRequest(BaseModel):
 
 def money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+def current_business_date(cur, store_id: int) -> date:
+    cur.execute("SELECT timezone,business_day_start FROM stores WHERE id=%s", (store_id,))
+    store = cur.fetchone()
+    if not store:
+        raise HTTPException(status_code=404, detail="Store not found")
+    local_now = datetime.now(ZoneInfo(store["timezone"]))
+    if local_now.time().replace(tzinfo=None) < store["business_day_start"]:
+        local_now -= timedelta(days=1)
+    return local_now.date()
 
 
 @app.post("/api/orders")
@@ -1725,9 +1736,10 @@ def refund_payment(payment_id: int, body: RefundRequest,
                 raise HTTPException(status_code=422,detail=f"Refund exceeds refundable balance {remaining}")
             cur.execute(
                 """INSERT INTO payment_refunds
-                   (store_id,payment_id,amount,reason,refunded_at,created_by_user_id,idempotency_key)
-                   VALUES (%s,%s,%s,%s,UTC_TIMESTAMP(3),%s,%s)""",
-                (user["store_id"],payment_id,str(amount),body.reason,user["user_id"],body.idempotency_key),
+                   (store_id,payment_id,business_date,amount,reason,refunded_at,created_by_user_id,idempotency_key)
+                   VALUES (%s,%s,%s,%s,%s,UTC_TIMESTAMP(3),%s,%s)""",
+                (user["store_id"],payment_id,current_business_date(cur,user["store_id"]),
+                 str(amount),body.reason,user["user_id"],body.idempotency_key),
             )
             refund_id=cur.lastrowid
             total_refunded=money(refunded+amount)
