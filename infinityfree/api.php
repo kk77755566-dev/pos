@@ -65,6 +65,7 @@ $route=trim((string)($_GET['r']??''),'/');
 try {
     if ($method==='GET' && $route==='csrf') respond(200,['csrf'=>$_SESSION['csrf']??=bin2hex(random_bytes(32))]);
     $u=user(); $store=(int)$u['store_id'];
+    require __DIR__ . '/api_workflows.php';
     if ($method==='GET') {
         staff($u);
         $queries=[
