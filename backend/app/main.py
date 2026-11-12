@@ -40,6 +40,13 @@ DB_CONFIG = {
 }
 
 app = FastAPI(title="Girls Bar POS API", version="0.1.0")
+allowed_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+if allowed_origins:
+    app.add_middleware(
+        CORSMiddleware, allow_origins=allowed_origins, allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 bearer = HTTPBearer(auto_error=False)
 
 
