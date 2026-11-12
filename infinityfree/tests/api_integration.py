@@ -57,7 +57,7 @@ api("settings", "PUT", {
     "tax_enabled": True, "tax_rate": 10, "tax_mode": "exclusive",
     "service_enabled": False, "service_rate": 0, "service_mode": "rate",
     "service_fixed_amount": 0, "service_taxable": True, "service_basis": "all_subtotal",
-    "work_rounding_minutes": 15, "work_rounding_mode": "floor"
+    "rounding_mode": "half_up", "work_rounding_minutes": 15, "work_rounding_mode": "floor"
 })
 new_table = api("tables", "POST", {"table_name": "B卓", "capacity": 3}, 201)["id"]
 api(f"tables/{new_table}", "PUT", {"table_name": "B卓改", "capacity": 3, "is_active": True})
