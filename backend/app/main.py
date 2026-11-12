@@ -993,7 +993,7 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
 
             cur.execute(
                 """SELECT id,table_id FROM table_sessions
-                    WHERE store_id=%s AND DATE(started_at)=%s AND status='closed'""",
+                    WHERE store_id=%s AND business_date=%s AND status='closed'""",
                 (store_id, body.business_date),
             )
             closed_sessions = cur.fetchall()
@@ -1325,7 +1325,7 @@ def confirm_cast_payroll(cast_id: int, business_date: str,
                      JOIN orders o ON o.store_id=oi.store_id AND o.id=oi.order_id
                      JOIN table_sessions ts ON ts.store_id=o.store_id AND ts.id=o.session_id
                     WHERE a.store_id=%s AND a.cast_id=%s AND a.status='active'
-                      AND DATE(ts.started_at)=%s
+                      AND ts.business_date=%s
                     ORDER BY a.id FOR UPDATE""",
                 (user["store_id"],cast_id,business_date),
             )
