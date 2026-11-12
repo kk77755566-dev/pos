@@ -1109,3 +1109,71 @@ def list_casts(user: dict[str, Any] = Depends(current_user)):
             return cur.fetchall()
     finally:
         conn.close()
+
+
+class OrderCancelRequest(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+
+
+@app.post("/api/orders/{order_id}/cancel")
+def cancel_order(order_id: int, body: OrderCancelRequest,
+                 user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,session_id,status FROM orders
+                    WHERE store_id=%s AND id=%s FOR UPDATE""",
+                (user["store_id"], order_id),
+            )
+            order = cur.fetchone()
+            if not order:
+                raise HTTPException(status_code=404, detail="Order not found")
+            if order["status"] == "cancelled":
+                conn.commit()
+                return {"order_id": order_id, "status": "cancelled", "replayed": True}
+
+            cur.execute(
+                """SELECT id FROM payments
+                    WHERE store_id=%s AND session_id=%s AND status='completed'
+                    LIMIT 1 FOR UPDATE""",
+                (user["store_id"], order["session_id"]),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Cannot cancel an order after payment has been recorded; refund workflow is required")
+
+            cur.execute(
+                """UPDATE order_items SET status='cancelled',cancelled_at=UTC_TIMESTAMP(3)
+                    WHERE store_id=%s AND order_id=%s AND status='active'""",
+                (user["store_id"], order_id),
+            )
+            cur.execute(
+                """UPDATE order_item_back_allocations a
+                    JOIN order_items oi ON oi.store_id=a.store_id AND oi.id=a.order_item_id
+                    SET a.status='reversed'
+                    WHERE a.store_id=%s AND oi.order_id=%s AND a.status='active'""",
+                (user["store_id"], order_id),
+            )
+            cur.execute(
+                "UPDATE orders SET status='cancelled' WHERE store_id=%s AND id=%s",
+                (user["store_id"], order_id),
+            )
+            cur.execute(
+                """INSERT INTO audit_logs
+                   (store_id,user_id,action,target_type,target_id,after_json)
+                   VALUES (%s,%s,'order_cancelled','order',%s,%s)""",
+                (user["store_id"], user["user_id"], order_id,
+                 json.dumps({"reason": body.reason}, ensure_ascii=False)),
+            )
+            conn.commit()
+            return {"order_id": order_id, "status": "cancelled", "replayed": False}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Order cancellation failed") from None
+    finally:
+        conn.close()
