@@ -14,7 +14,7 @@ It uses the PHP session created by `index.php`; it does not expose DB credential
 - Authenticate through `index.php` first.
 - Fetch a CSRF token with `GET api.php?r=csrf`, then send it as `X-CSRF-Token` on every POST.
 - All database queries are scoped to the authenticated user's `store_id`.
-- POST writes that can be retried require an `idempotency_key` (8–100 chars).
+- Retryable sales writes (sessions, sets, orders, payments and refunds) require an `idempotency_key` (8–100 chars).
 
 ## Read routes
 - `GET api.php?r=tables`
@@ -50,4 +50,4 @@ All routes below are same-origin PHP requests and require the authenticated PHP 
 
 The touch-friendly PHP page is `index.php`; its browser client and styles are `pos.js` and `pos.css`. All data access is scoped to the logged-in store. Do not expose a user-supplied store ID.
 
-The workflows above are an initial port, not a production release. Tax/service treatment, business-day edge cases, refund reconciliation, payroll statutory treatment, and daily-close totals still require full integration tests and review. The current PHP dashboard is not yet the complete touch-first POS UI.
+CI runs PHP lint, MySQL 8 schema import, and an end-to-end test through the PHP built-in server covering login, settings, master-data CRUD, table opening, sets, orders, back splits, bill calculation, payment replay, refund, attendance, payroll, expenses, daily closing and post-close write blocking. The full CI suite must still pass after every change.\n\nThis is not yet approved for real-store operation. Live InfinityFree DB/browser acceptance tests are still required. Statutory overtime, late-night premiums, holiday premiums, 60-hour overtime premiums, insurance, withholding and paid-leave calculations are not implemented; the current payroll covers base hourly pay, back, rounding and recorded statutory-break checks only. Tax/service settings are store-wide; a historical per-session immutable bill snapshot is still required before changing fee settings after transactions. Do not deploy until these limitations are resolved and the user explicitly approves deployment.
