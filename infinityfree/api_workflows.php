@@ -2,6 +2,13 @@
 declare(strict_types=1);
 /* Additional same-origin workflows. Included by api.php after authentication. */
 $wfdb = pdo();
+function posRoundTotal(float $amount, string $mode): float {
+    return match ($mode) {
+        'floor' => (float)floor($amount),
+        'ceil' => (float)ceil($amount),
+        default => (float)round($amount, 0, PHP_ROUND_HALF_UP),
+    };
+}
 
 /* Store-scoped master-data maintenance. Soft-disable preserves historical snapshots. */
 if ($method === 'GET' && $route === 'expenses') {
@@ -33,7 +40,7 @@ if ($method === 'GET' && preg_match('#^sessions/([0-9]+)/bill$#',$route,$m)) {
     $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
     $taxBase=$subtotal+(!empty($cfg['service_taxable'])?$service:0);
     $tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-    $total=round($subtotal+$service+($cfg['tax_mode']==='inclusive'?0:$tax),2);
+    $total=posRoundTotal($subtotal+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
     $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
     respond(200,['session_id'=>$sid,'status'=>$session['status'],'items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'service'=>$service,'tax'=>$tax,'total'=>$total,'paid'=>$paid,'balance'=>max(0,round($total-$paid,2))]);
 }
@@ -177,7 +184,7 @@ if ($route === 'payments') {
     $sub=$items+$sets;$basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$sub);
     $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
     $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);$tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-    $total=round($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),2);
+    $total=posRoundTotal($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
     $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
     if($amount>$total-$paid+0.001){$wfdb->rollBack();respond(422,['error'=>'請求残額を超える入金です']);}
     $q=$wfdb->prepare("INSERT INTO payments(store_id,session_id,payment_method,amount,status,idempotency_key,paid_at,created_by_user_id) VALUES(?,?,?,?,'completed',?,UTC_TIMESTAMP(3),?)");$q->execute([$store,$sid,$method,$amount,$key,(int)$u['id']]);$pid=(int)$wfdb->lastInsertId();$newPaid=$paid+$amount;$closed=$newPaid>=$total-0.001;
