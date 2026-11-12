@@ -36,7 +36,7 @@ $user=$_SESSION['user']??null;
 <div><label>卓ID（空席を選択）</label><input id="tableid" type="number" min="1"><label>人数</label><input id="people" type="number" min="1" value="1"><button id="seat">着席開始</button></div>
 <div><label>営業セッションID</label><input id="session" type="number"><label>セット・延長</label><select id="setmenu"></select><button id="addset">セットを登録</button></div>
 <div><label>注文セッションID</label><input id="ordersession" type="number"><label>商品</label><select id="product"></select><label>数量</label><input id="qty" type="number" min="0.001" step="0.001" value="1"></div>
-<div><label>バック配分先（複数選択）</label><select id="cast" multiple size="4"></select><p class="muted">選択キャストに均等配分します。</p><button id="order">注文登録</button></div></div></section>
+<div><label>バック配分先（複数選択）</label><select id="cast" multiple size="4"></select><label>配分率（%・選択順。例 60,40）</label><input id="backrates" placeholder="空欄なら均等配分"><p class="muted">複数キャストへの配分率を指定できます。合計100%以下。</p><button id="order">注文登録</button></div></div></section>
 <section class="panel"><h2>会計・返金</h2><div class="grid">
 <div><label>セッションID</label><input id="billsession" type="number"><button id="bill" class="secondary">会計金額を確認</button></div>
 <div><label>決済方法</label><select id="method"><option value="cash">現金</option><option value="credit_card">クレジットカード</option><option value="qr">QR決済</option><option value="electronic_money">電子マネー</option><option value="transfer">振込</option><option value="other">その他</option></select><label>支払額</label><input id="payamount" type="number" min="0.01" step="0.01"><button id="pay">入金登録</button></div>
