@@ -98,15 +98,16 @@ try {
     }
 
     if (preg_match('#^sessions/(\d+)/sets$#',$route,$m)) {
-        $sid=(int)$m[1]; $set=(int)($data['set_menu_id']??0);
+        $sid=(int)$m[1]; $set=(int)($data['set_menu_id']??0); $key=idempotency($data);
         $db->beginTransaction();
+        $old=$db->prepare('SELECT id,session_id,set_menu_id FROM session_set_items WHERE store_id=? AND idempotency_key=?');$old->execute([$store,$key]);if($existing=$old->fetch()){$db->commit();respond(200,['data'=>['session_set_item_id'=>(int)$existing['id'],'session_id'=>(int)$existing['session_id'],'set_menu_id'=>(int)$existing['set_menu_id']],'replayed'=>true]);}
         $q=$db->prepare("SELECT id,status FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");
         $q->execute([$store,$sid]); if (($s=$q->fetch())===false || $s['status']!=='open') {$db->rollBack();respond(409,['error'=>'営業中の卓ではありません']);}
         $q=$db->prepare('SELECT id,name,duration_minutes,price FROM set_menus WHERE store_id=? AND id=? AND is_active=1');
         $q->execute([$store,$set]); if (!$menu=$q->fetch()) {$db->rollBack();respond(404,['error'=>'セットが見つかりません']);}
         $now=new DateTimeImmutable('now',new DateTimeZone('UTC')); $start=$now->format('Y-m-d H:i:s.v'); $end=$now->modify('+'.(int)$menu['duration_minutes'].' minutes')->format('Y-m-d H:i:s.v');
-        $q=$db->prepare("INSERT INTO session_set_items(store_id,session_id,set_menu_id,name_snapshot,duration_minutes_snapshot,price_snapshot,started_at,ends_at,status) VALUES(?,?,?,?,?,?,? ,?,'active')");
-        $q->execute([$store,$sid,$set,$menu['name'],$menu['duration_minutes'],$menu['price'],$start,$end]);
+        $q=$db->prepare("INSERT INTO session_set_items(store_id,session_id,set_menu_id,name_snapshot,duration_minutes_snapshot,price_snapshot,started_at,ends_at,idempotency_key,status) VALUES(?,?,?,?,?,?,?,?,?,'active')");
+        $q->execute([$store,$sid,$set,$menu['name'],$menu['duration_minutes'],$menu['price'],$start,$end,$key]);
         $db->commit(); respond(201,['data'=>['session_set_item_id'=>(int)$db->lastInsertId(),'name'=>$menu['name'],'price'=>$menu['price'],'ends_at'=>$end]]);
     }
 
