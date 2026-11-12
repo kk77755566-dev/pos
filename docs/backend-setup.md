@@ -11,16 +11,16 @@
 3. Copy `backend/.env.example` to `backend/.env` or the process working directory's `.env`; fill in DB credentials and a random JWT secret of at least 32 characters.
 4. Add the one-time INITIAL_* values from `backend/.env.bootstrap.example`.
 5. From the repository root, install `backend/requirements.txt`.
-6. Run `python -m backend.scripts.bootstrap_store` once to create the initial store and owner.
+6. From the `backend` directory, run `python -m scripts.bootstrap_store` once to create the initial store and owner.
 7. Remove the INITIAL_* variables from the environment after bootstrap.
-8. Start with `uvicorn backend.app.main:app --reload`.
+8. From the `backend` directory, start with `uvicorn app.main:app --reload`.
 9. Verify `GET /health`, `GET /health/db`, login, and authenticated `GET /api/tables`.
 
 ## Current API coverage (initial implementation; not production-certified)
 - Health checks, login, authenticated table listing.
 - Table session start, set/extension registration.
 - Order registration with item-level cast back allocation and idempotency key.
-- Bill preview and payment registration (split payment supported).
+- Bill preview, split payment, partial/full refunds and refund ledger (actual card/QR provider refund is external).
 - Cast attendance clock-in/out and provisional hourly-pay/back aggregation.
 - Daily closing run and closing-result inspection. Closing is blocked when open sessions, missing clock-outs, or closed-session payment mismatches are found.
 - Daily closing is currently invoked through the API; an automatic scheduled trigger and store-local business-day timezone handling are not yet configured.
@@ -49,7 +49,14 @@ Open `frontend/index.html` through a static HTTPS host or local static server. E
 
 
 ## Master data and settings endpoints
-- Owner/manager only: create products, set menus, casts, tables and update tax/service/work-time rounding settings.
+- Owner/manager only: create, edit and deactivate products, set menus, casts and tables; update tax/service/work-time rounding settings.
 - Read master lists: products, set menus and casts.
-- These are initial endpoints. Edit/deactivate workflows, full permission matrix, settings UI and validation against a real store configuration remain to be completed.
+- These are initial endpoints. A full permission matrix, advanced master-data screens, and validation against a real store configuration remain to be completed.
 - Payroll confirmation is a preliminary snapshot only. It does not yet calculate statutory overtime/night premiums, statutory breaks, social insurance or tax withholding; obtain Japanese labor/payroll professional review before paying wages.
+
+
+## Refunds
+- `POST /api/payments/{payment_id}/refund` accepts a partial or full refund, a reason and an idempotency key.
+- Refund records are stored separately from original payments and assigned to the store's local business date (using its configured timezone and business-day start).
+- The daily closing records refund outflow separately and nets it from payment-method totals.
+- The POS refund endpoint records the refund in the POS ledger; it does not send a refund instruction to a card/QR processor or cash register.
