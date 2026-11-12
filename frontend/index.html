@@ -65,9 +65,7 @@ function msg(value,el="msg"){ $(el).textContent=typeof value==="string"?value:JS
 $("loginbtn").onclick=async()=>{try{const d=await api("/api/auth/login","POST",{store_code:$("store").value,login_id:$("loginid").value,password:$("password").value});token=d.access_token;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");await loadAll();msg("ログインしました。");}catch(e){msg(e.message,"loginmsg")}};
 $("logout").onclick=()=>{token="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("logout").classList.add("hidden")};
 async function loadAll(){const [tables,products,sets,casts,settings]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts"),api("/api/settings")]);master={products,sets,casts,tables};fill("editproduct",products,p=>p.product_name);fill("editmenu",sets,s=>s.name);fill("editcast",casts,c=>c.cast_name);fill("edittable",tables,t=>t.table_name);setSettings(settings);
-$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+"
-"+t.status+(t.session_id?"
-Session #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
+$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+String.fromCharCode(10)+t.status+(t.session_id?String.fromCharCode(10)+"Session #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
 fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);fill("payrollcast",casts,c=>c.cast_name);
 }
 
