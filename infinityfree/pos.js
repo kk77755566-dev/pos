@@ -7,6 +7,14 @@ const api=async(route,method='GET',body=null)=>{
  const json=await res.json().catch(()=>({error:'応答を読み取れません'}));if(!res.ok)throw new Error(json.error||'HTTP '+res.status);return json;
 };
 const say=v=>{$('message').textContent=typeof v==='string'?v:JSON.stringify(v,null,2)};
+const yen=v=>'¥'+Number(v||0).toLocaleString('ja-JP',{maximumFractionDigits:2});
+function renderBill(b){
+ const rows=[['商品小計',b.items_subtotal],['セット・延長',b.sets_subtotal],['小計',b.subtotal],['割引',-Number(b.discount||0)],['サービス料',b.service],['消費税',b.tax],['請求合計',b.total],['入金済み',b.paid],['残額',b.balance]];
+ const root=$('billBreakdown');root.replaceChildren();
+ for(const [label,value] of rows){const line=document.createElement('div');line.className='bill-line';const name=document.createElement('span');name.textContent=label;const amount=document.createElement('strong');amount.textContent=yen(value);line.append(name,amount);root.append(line)}
+ root.dataset.sessionId=String(b.session_id);
+}
+async function loadBill(){const b=await api('sessions/'+$('billsession').value+'/bill');$('payamount').value=b.balance;$('discountsession').value=$('billsession').value;renderBill(b);return b}
 const key=()=>crypto.randomUUID();
 const dateNow=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 const fill=(id,rows,label)=>{const el=$(id);el.replaceChildren();for(const r of rows){const o=document.createElement('option');o.value=r.id;o.textContent=label(r);el.append(o)}};
@@ -26,9 +34,9 @@ $('refresh').onclick=()=>run(reload);
 $('seat').onclick=()=>run(async()=>{const r=await api('sessions','POST',{table_id:+$('tableid').value,customer_count:+$('people').value,idempotency_key:key()});const sid=r.data?.session_id??r.data?.id;if(sid){$('session').value=sid;$('ordersession').value=sid;$('billsession').value=sid}return r});
 $('addset').onclick=()=>run(async()=>api('sessions/'+$('session').value+'/sets','POST',{set_menu_id:+$('setmenu').value,idempotency_key:key()}));
 $('order').onclick=()=>run(async()=>{const ids=[...$('cast').selectedOptions].map(o=>+o.value);const raw=$('backrates').value.trim();const rates=raw?raw.split(',').map(x=>Number(x.trim())):ids.map(()=>100/Math.max(ids.length,1));if(rates.length!==ids.length||rates.some(x=>!Number.isFinite(x)||x<0||x>100)||rates.reduce((a,b)=>a+b,0)>100.00001)throw Error('配分率を選択キャスト数と合わせ、合計100%以下にしてください');const allocations=ids.map((id,i)=>({cast_id:id,allocation_rate:rates[i]}));return api('orders','POST',{session_id:+$('ordersession').value,idempotency_key:key(),items:[{product_id:+$('product').value,quantity:+$('qty').value,allocations}]})});
-$('bill').onclick=()=>run(async()=>{const b=await api('sessions/'+$('billsession').value+'/bill');$('payamount').value=b.balance;$('discountsession').value=$('billsession').value;say(b);return b});
-$('applydiscount').onclick=()=>run(async()=>{const sid=+$('discountsession').value;if(!sid)throw Error('セッションIDを入力してください');return api('sessions/'+sid+'/discounts','POST',{discount_type:$('discounttype').value,discount_value:+$('discountvalue').value,reason:$('discountreason').value,idempotency_key:key()})});
-$('pay').onclick=()=>run(async()=>{const r=await api('payments','POST',{session_id:+$('billsession').value,payment_method:$('method').value,amount:+$('payamount').value,idempotency_key:key()});if(r.payment_id)$('paymentid').value=r.payment_id;return r});
+$('bill').onclick=()=>run(async()=>{const b=await loadBill();say(b);return b});
+$('applydiscount').onclick=()=>run(async()=>{const sid=+$('discountsession').value;if(!sid)throw Error('セッションIDを入力してください');const r=await api('sessions/'+sid+'/discounts','POST',{discount_type:$('discounttype').value,discount_value:+$('discountvalue').value,reason:$('discountreason').value,idempotency_key:key()});$('billsession').value=sid;await loadBill();return r});
+$('pay').onclick=()=>run(async()=>{const r=await api('payments','POST',{session_id:+$('billsession').value,payment_method:$('method').value,amount:+$('payamount').value,idempotency_key:key()});if(r.payment_id)$('paymentid').value=r.payment_id;await loadBill();return r});
 $('refund').onclick=()=>run(async()=>{if(!confirm('返金を登録しますか？'))return;return api('payments/'+$('paymentid').value+'/refund','POST',{amount:+$('refundamount').value,reason:$('refundreason').value,idempotency_key:key()})});
 $('clockin').onclick=()=>run(async()=>api('attendance/clock-in','POST',{cast_id:+$('attcast').value}));
 $('clockout').onclick=()=>run(async()=>api('attendance/clock-out','POST',{cast_id:+$('attcast').value}));

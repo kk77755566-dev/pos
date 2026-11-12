@@ -2,3 +2,4 @@
 body[data-role="cast"] .wrap{max-width:760px}
 body[data-role="cast"] .panel{margin-bottom:18px}
 body[data-role="cast"] pre{white-space:pre-wrap;overflow-wrap:anywhere}
+.bill-breakdown{margin-top:14px;border:1px solid #dbe3ed;border-radius:12px;padding:12px;background:#f8fafc}.bill-line{display:flex;justify-content:space-between;gap:14px;padding:7px 2px;border-bottom:1px solid #e2e8f0}.bill-line:last-child{border-bottom:0;font-size:18px;color:#0f5132}.bill-line strong{font-variant-numeric:tabular-nums}
