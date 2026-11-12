@@ -33,7 +33,7 @@
 ## Current endpoints
 - `POST /api/sessions` — open a table session.
 - `POST /api/sessions/{session_id}/sets` — add a set or extension.
-- `POST /api/orders` — register order items and cast back allocations.\n- `POST /api/orders/{order_id}/cancel` — cancel an unpaid order with reason and audit log.\n- `GET /api/products`, `GET /api/set-menus`, `GET /api/casts` — store-scoped master data lists.
+- `POST /api/orders` — register order items and cast back allocations.\n- `POST /api/orders/{order_id}/cancel` — cancel an unpaid order with reason and audit log.\n- `GET/POST /api/products`, `GET/POST /api/set-menus`, `GET/POST /api/casts`, `POST /api/tables` — master data list/create.\n- `PUT /api/settings` — store tax/service/work-time rounding settings.\n- `POST /api/casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD` — provisional payroll calculation and confirmation snapshot.
 - `GET /api/sessions/{session_id}/bill` — preview bill and balance.
 - `POST /api/payments` — record a payment, including split payments.
 - `POST /api/attendance/clock-in`, `POST /api/attendance/clock-out` — attendance.
@@ -45,4 +45,11 @@ The API is not yet a complete operational POS. Verify every SQL statement agains
 
 
 ## Frontend
-Open `frontend/index.html` through a static HTTPS host or local static server. Enter the backend API origin in the login panel. The API server must allow browser requests from the frontend origin (CORS configuration is not yet included in this backend slice), and HTTPS is required outside local development. Never put DB credentials in the frontend.
+Open `frontend/index.html` through a static HTTPS host or local static server. Enter the backend API origin in the login panel. Set `CORS_ORIGINS` in the backend environment to a comma-separated exact origin allowlist (for example `https://pos.example.com`). The API server does not enable wildcard origins. HTTPS is required outside local development. Never put DB credentials in the frontend.
+
+
+## Master data and settings endpoints
+- Owner/manager only: create products, set menus, casts, tables and update tax/service/work-time rounding settings.
+- Read master lists: products, set menus and casts.
+- These are initial endpoints. Edit/deactivate workflows, full permission matrix, settings UI and validation against a real store configuration remain to be completed.
+- Payroll confirmation is a preliminary snapshot only. It does not yet calculate statutory overtime/night premiums, statutory breaks, social insurance or tax withholding; obtain Japanese labor/payroll professional review before paying wages.
