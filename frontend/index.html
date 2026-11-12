@@ -44,7 +44,9 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 </div></main>
 <script>
 const $=id=>document.getElementById(id);let token="",master={products:[],sets:[],casts:[]};
-let apiBase=localStorage.getItem("girlsbar_api")||location.origin;\n$("apiurl").value=apiBase;\n$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
+let apiBase=localStorage.getItem("girlsbar_api")||location.origin;
+$("apiurl").value=apiBase;
+$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
 function key(){return crypto.randomUUID()}
 async function api(path,method="GET",body=null){
  const res=await fetch(apiBase+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
@@ -54,11 +56,14 @@ function msg(value,el="msg"){ $(el).textContent=typeof value==="string"?value:JS
 $("loginbtn").onclick=async()=>{try{const d=await api("/api/auth/login","POST",{store_code:$("store").value,login_id:$("loginid").value,password:$("password").value});token=d.access_token;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");await loadAll();msg("ログインしました。");}catch(e){msg(e.message,"loginmsg")}};
 $("logout").onclick=()=>{token="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("logout").classList.add("hidden")};
 async function loadAll(){const [tables,products,sets,casts]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts")]);master={products,sets,casts};
-$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+"\n"+t.status+(t.session_id?"\nSession #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
+$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+"
+"+t.status+(t.session_id?"
+Session #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
 fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);fill("payrollcast",casts,c=>c.cast_name);
 }
 function fill(id,arr,label){const el=$(id);el.replaceChildren();arr.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=label(x);el.append(o)})}
-$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));\n$("addtable").onclick=async()=>{try{msg(await api("/api/tables","POST",{table_name:$("newtable").value,capacity:4}));await loadAll()}catch(e){msg(e.message)}};
+$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));
+$("addtable").onclick=async()=>{try{msg(await api("/api/tables","POST",{table_name:$("newtable").value,capacity:4}));await loadAll()}catch(e){msg(e.message)}};
 $("addcast").onclick=async()=>{try{msg(await api("/api/casts","POST",{cast_code:$("castcode").value,cast_name:$("castname").value,hourly_wage:$("castwage").value}));await loadAll()}catch(e){msg(e.message)}};
 $("addproduct").onclick=async()=>{try{msg(await api("/api/products","POST",{product_name:$("prodname").value,selling_price:$("prodprice").value,back_rate:$("prodrate").value,back_type:"percentage"}));await loadAll()}catch(e){msg(e.message)}};
 $("addmenu").onclick=async()=>{try{msg(await api("/api/set-menus","POST",{name:$("setname").value,duration_minutes:+$("setminutes").value,price:$("setprice").value,is_extension:false}));await loadAll()}catch(e){msg(e.message)}};
@@ -68,6 +73,8 @@ $("addset").onclick=async()=>{try{msg(await api("/api/sessions/"+$("sessionid").
 $("order").onclick=async()=>{try{const selected=[...$("cast").selectedOptions].map(o=>+o.value);const allocations=selected.map(id=>({cast_id:id,allocation_rate:100/Math.max(selected.length,1)}));const d=await api("/api/orders","POST",{session_id:+$("ordersession").value,idempotency_key:key(),items:[{product_id:+$("product").value,quantity:$("quantity").value,allocations}]});msg(d)}catch(e){msg(e.message)}};
 $("bill").onclick=async()=>{try{const d=await api("/api/sessions/"+$("billsession").value+"/bill");$("payamount").value=d.balance;msg(d)}catch(e){msg(e.message)}};
 $("pay").onclick=async()=>{try{msg(await api("/api/payments","POST",{session_id:+$("billsession").value,payment_method:$("method").value,amount:$("payamount").value,idempotency_key:key()}));await loadAll()}catch(e){msg(e.message)}};
-$("confirmPayroll").onclick=async()=>{try{const date=$("payrolldate").value;const id=$("payrollcast").value;msg(await api("/api/casts/"+id+"/payroll/confirm?business_date="+encodeURIComponent(date),"POST"))}catch(e){msg(e.message)}};\n$("payrolldate").value=new Date().toLocaleDateString("en-CA");\n$("close").onclick=async()=>{if(!confirm("この営業日の締め処理を実行しますか？"))return;try{msg(await api("/api/closings/run","POST",{business_date:$("closedate").value}))}catch(e){msg(e.message)}};
+$("confirmPayroll").onclick=async()=>{try{const date=$("payrolldate").value;const id=$("payrollcast").value;msg(await api("/api/casts/"+id+"/payroll/confirm?business_date="+encodeURIComponent(date),"POST"))}catch(e){msg(e.message)}};
+$("payrolldate").value=new Date().toLocaleDateString("en-CA");
+$("close").onclick=async()=>{if(!confirm("この営業日の締め処理を実行しますか？"))return;try{msg(await api("/api/closings/run","POST",{business_date:$("closedate").value}))}catch(e){msg(e.message)}};
 $("closedate").value=new Date().toLocaleDateString("en-CA");
 </script></body></html>
