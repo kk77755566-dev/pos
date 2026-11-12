@@ -53,8 +53,8 @@ jobs:
       - name: Compile Python modules
         run: python -m compileall -q app scripts
       - name: Build production container
-        working-directory: ..
-        run: docker build -t girlsbar-pos-api:ci .
+        working-directory: .
+        run: docker build -f Dockerfile -t girlsbar-pos-api:ci .
       - name: Validate frontend JavaScript
         run: node ../frontend/validate.mjs
       - name: Apply MySQL schema
