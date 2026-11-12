@@ -1322,3 +1322,184 @@ def confirm_cast_payroll(cast_id: int, business_date: str,
         raise HTTPException(status_code=503,detail="Payroll confirmation failed") from None
     finally:
         conn.close()
+
+
+class ProductCreate(BaseModel):
+    product_name: str = Field(min_length=1, max_length=120)
+    selling_price: Decimal = Field(ge=0)
+    back_rate: Decimal = Field(default=0, ge=0, le=100)
+    back_type: str = Field(default="percentage", pattern=r"^(percentage|fixed_per_unit|none)$")
+
+
+class SetMenuCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    duration_minutes: int = Field(gt=0, le=1440)
+    price: Decimal = Field(ge=0)
+    is_extension: bool = False
+
+
+class CastCreate(BaseModel):
+    cast_code: str = Field(min_length=1, max_length=40)
+    cast_name: str = Field(min_length=1, max_length=120)
+    hourly_wage: Decimal = Field(ge=0)
+
+
+class TableCreate(BaseModel):
+    table_name: str = Field(min_length=1, max_length=40)
+    capacity: int = Field(default=4, ge=1, le=100)
+
+
+def require_owner_or_manager(role: str):
+    if role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager permission required")
+
+
+@app.post("/api/products")
+def create_product(body: ProductCreate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO products (store_id,product_name,selling_price,back_rate,back_type)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (user["store_id"],body.product_name,str(body.selling_price),str(body.back_rate),body.back_type),
+            )
+            product_id=cur.lastrowid
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id)
+                   VALUES (%s,%s,'product_created','product',%s)""",
+                (user["store_id"],user["user_id"],product_id),
+            )
+            return {"product_id":product_id}
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Product could not be created; check duplicate or database constraints") from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/set-menus")
+def create_set_menu(body: SetMenuCreate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO set_menus (store_id,name,duration_minutes,price,is_extension)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (user["store_id"],body.name,body.duration_minutes,str(body.price),body.is_extension),
+            )
+            menu_id=cur.lastrowid
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id)
+                   VALUES (%s,%s,'set_menu_created','set_menu',%s)""",
+                (user["store_id"],user["user_id"],menu_id),
+            )
+            return {"set_menu_id":menu_id}
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Set menu could not be created") from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/casts")
+def create_cast(body: CastCreate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO casts (store_id,cast_code,cast_name,hourly_wage)
+                   VALUES (%s,%s,%s,%s)""",
+                (user["store_id"],body.cast_code,body.cast_name,str(body.hourly_wage)),
+            )
+            cast_id=cur.lastrowid
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id)
+                   VALUES (%s,%s,'cast_created','cast',%s)""",
+                (user["store_id"],user["user_id"],cast_id),
+            )
+            return {"cast_id":cast_id}
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Cast could not be created; cast code may already exist") from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/tables")
+def create_table(body: TableCreate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO tables (store_id,table_name,capacity)
+                   VALUES (%s,%s,%s)""",
+                (user["store_id"],body.table_name,body.capacity),
+            )
+            table_id=cur.lastrowid
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id)
+                   VALUES (%s,%s,'table_created','table',%s)""",
+                (user["store_id"],user["user_id"],table_id),
+            )
+            return {"table_id":table_id}
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Table could not be created; table name may already exist") from None
+    finally:
+        conn.close()
+
+
+class StoreSettingsUpdate(BaseModel):
+    tax_enabled: bool
+    tax_rate: Decimal = Field(ge=0, le=100)
+    tax_mode: str = Field(pattern=r"^(inclusive|exclusive)$")
+    service_enabled: bool
+    service_rate: Decimal = Field(ge=0, le=100)
+    service_mode: str = Field(pattern=r"^(rate|fixed)$")
+    service_fixed_amount: Decimal = Field(ge=0)
+    service_taxable: bool
+    service_basis: str = Field(pattern=r"^(sets_only|items_only|all_subtotal|configured)$")
+    work_rounding_minutes: int = Field(ge=1, le=60)
+    work_rounding_mode: str = Field(pattern=r"^(floor|half_up|ceil)$")
+
+
+@app.put("/api/settings")
+def update_store_settings(body: StoreSettingsUpdate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    if body.work_rounding_minutes not in {1,5,10,15,30,60}:
+        raise HTTPException(status_code=422,detail="Unsupported work rounding unit")
+    conn=db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE store_settings SET tax_enabled=%s,tax_rate=%s,tax_mode=%s,
+                       service_enabled=%s,service_rate=%s,service_mode=%s,
+                       service_fixed_amount=%s,service_taxable=%s,service_basis=%s,
+                       work_rounding_minutes=%s,work_rounding_mode=%s,updated_by_user_id=%s
+                    WHERE store_id=%s""",
+                (body.tax_enabled,str(body.tax_rate),body.tax_mode,
+                 body.service_enabled,str(body.service_rate),body.service_mode,
+                 str(body.service_fixed_amount),body.service_taxable,body.service_basis,
+                 body.work_rounding_minutes,body.work_rounding_mode,user["user_id"],user["store_id"]),
+            )
+            if cur.rowcount == 0:
+                cur.execute("SELECT store_id FROM store_settings WHERE store_id=%s", (user["store_id"],))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=409,detail="Store settings row is missing")
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,after_json)
+                   VALUES (%s,%s,'store_settings_updated','store_settings',%s)""",
+                (user["store_id"],user["user_id"],json.dumps(body.model_dump(mode="json"),ensure_ascii=False)),
+            )
+        conn.commit()
+        return {"updated":True}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503,detail="Settings update failed") from None
+    finally:
+        conn.close()
