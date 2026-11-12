@@ -134,6 +134,12 @@ CREATE TABLE casts (
   CONSTRAINT chk_casts_hourly_wage CHECK (hourly_wage >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+ALTER TABLE users
+  ADD COLUMN cast_id BIGINT UNSIGNED NULL AFTER display_name,
+  ADD UNIQUE KEY uq_users_store_id (store_id,id),
+  ADD UNIQUE KEY uq_users_store_cast (store_id,cast_id),
+  ADD CONSTRAINT fk_users_cast FOREIGN KEY (store_id,cast_id) REFERENCES casts(store_id,id);
+
 CREATE TABLE cast_pay_rules (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   store_id BIGINT UNSIGNED NOT NULL,

@@ -36,6 +36,31 @@ function posGetSessionBill(PDO $db, int $store, int $sid): array {
     $bill=posCalculateSessionBill($db,$store,$sid,$cfg);$bill['snapshot_locked']=false;return $bill;
 }
 
+/* Cast self-service endpoints. Cast accounts can access only their linked attendance and payroll. */
+if ($method==='GET' && $route==='cast/me') {
+    if(($u['role_code']??'')!=='cast'||empty($u['cast_id']))respond(403,['error'=>'キャスト専用アカウントが必要です']);
+    $castId=(int)$u['cast_id'];$date=businessDate($wfdb,$store);
+    $q=$wfdb->prepare('SELECT id,business_date,clock_in_at,clock_out_at,break_minutes,status FROM attendance WHERE store_id=? AND cast_id=? ORDER BY business_date DESC,clock_in_at DESC LIMIT 60');$q->execute([$store,$castId]);$attendance=$q->fetchAll();
+    $q=$wfdb->prepare('SELECT business_date,work_minutes_raw,work_minutes_payable,hourly_wage_snapshot,hourly_pay,back_pay,adjustment,total_pay,status FROM payroll_details WHERE store_id=? AND cast_id=? ORDER BY business_date DESC LIMIT 60');$q->execute([$store,$castId]);$payroll=$q->fetchAll();
+    respond(200,['cast_id'=>$castId,'business_date'=>$date,'attendance'=>$attendance,'payroll'=>$payroll]);
+}
+if ($method==='POST' && in_array($route,['cast/clock-in','cast/clock-out'],true)) {
+    csrf();
+    if(($u['role_code']??'')!=='cast'||empty($u['cast_id']))respond(403,['error'=>'キャスト専用アカウントが必要です']);
+    $castId=(int)$u['cast_id'];$wfdb->beginTransaction();
+    $q=$wfdb->prepare('SELECT id FROM casts WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE');$q->execute([$store,$castId]);if(!$q->fetch()){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
+    if($route==='cast/clock-in'){
+        $date=businessDate($wfdb,$store);assertBusinessDateOpen($wfdb,$store,$date);
+        $q=$wfdb->prepare('SELECT id FROM attendance WHERE store_id=? AND cast_id=? AND clock_out_at IS NULL FOR UPDATE');$q->execute([$store,$castId]);if($q->fetch()){$wfdb->rollBack();respond(409,['error'=>'既に出勤中です']);}
+        $wfdb->prepare("INSERT INTO attendance(store_id,cast_id,business_date,clock_in_at,status,created_by_user_id) VALUES(?,?,?,UTC_TIMESTAMP(3),'working',?)")->execute([$store,$castId,$date,(int)$u['id']]);
+    } else {
+        $q=$wfdb->prepare('SELECT id,business_date FROM attendance WHERE store_id=? AND cast_id=? AND clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE');$q->execute([$store,$castId]);$a=$q->fetch();if(!$a){$wfdb->rollBack();respond(409,['error'=>'出勤中の記録がありません']);}
+        assertBusinessDateOpen($wfdb,$store,$a['business_date']);
+        $wfdb->prepare("UPDATE attendance SET clock_out_at=UTC_TIMESTAMP(3),status='completed',updated_by_user_id=? WHERE store_id=? AND id=?")->execute([(int)$u['id'],$store,$a['id']]);
+    }
+    $wfdb->commit();respond(200,['ok'=>true,'action'=>$route]);
+}
+
 /* Store-scoped master-data maintenance. Soft-disable preserves historical snapshots. */
 if ($method === 'GET' && $route === 'expenses') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
@@ -74,6 +99,7 @@ if ($method === 'GET' && $route === 'payroll') {
 }
 if (!in_array($method,['POST','PUT'],true)) return;
 $workflowWrite = in_array($route,['settings','tables','products','sets','casts','payments','expenses','attendance/clock-in','attendance/clock-out','attendance/break','closings/run'],true)
+    || preg_match('#^casts/[0-9]+/account$#',$route)
     || preg_match('#^(tables|products|sets|casts)/[0-9]+$#',$route)
     || preg_match('#^sessions/[0-9]+/discounts$#',$route)
     || preg_match('#^payments/[0-9]+/refund$#',$route)
@@ -97,6 +123,20 @@ if (preg_match('#^sessions/([0-9]+)/discounts$#',$route,$m) && $method==='POST')
     if($amount<=0||$amount>$remaining+0.001){$wfdb->rollBack();respond(422,['error'=>'割引額が小計を超えています']);}
     $wfdb->prepare('INSERT INTO session_discounts(store_id,session_id,discount_type,discount_value,discount_amount,reason,idempotency_key,created_by_user_id) VALUES(?,?,?,?,?,?,?,?)')->execute([$store,$sid,$type,$value,$amount,$reason,$key,(int)$u['id']]);
     $wfdb->commit();respond(201,['discount_amount'=>$amount,'discount_total'=>$already+$amount]);
+}
+
+/* Create a linked cast login account. A cast account cannot select another cast ID. */
+if (preg_match('#^casts/([0-9]+)/account$#',$route,$m) && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'アカウント作成権限がありません']);
+    $castId=(int)$m[1];$login=trim((string)($d['login_id']??''));$password=(string)($d['password']??'');
+    if(!preg_match('/^[A-Za-z0-9_.-]{4,120}$/',$login)||strlen($password)<12||strlen($password)>200)respond(422,['error'=>'ログインIDは4〜120文字、パスワードは12文字以上で指定してください']);
+    $q=$wfdb->prepare('SELECT id FROM casts WHERE store_id=? AND id=? AND is_active=1');$q->execute([$store,$castId]);if(!$q->fetch())respond(404,['error'=>'キャストが見つかりません']);
+    $q=$wfdb->prepare('SELECT id FROM users WHERE store_id=? AND cast_id=?');$q->execute([$store,$castId]);if($q->fetch())respond(409,['error'=>'このキャストには既にログインアカウントがあります']);
+    $q=$wfdb->prepare("SELECT id FROM roles WHERE role_code='cast'");$q->execute();$roleId=(int)$q->fetchColumn();if(!$roleId)respond(500,['error'=>'castロールが未登録です']);
+    $q=$wfdb->prepare('SELECT cast_name FROM casts WHERE store_id=? AND id=?');$q->execute([$store,$castId]);$castName=(string)$q->fetchColumn();
+    $hash=password_hash($password,PASSWORD_DEFAULT);
+    $q=$wfdb->prepare('INSERT INTO users(store_id,role_id,login_id,password_hash,display_name,cast_id,is_active) VALUES(?,?,?,?,?,?,1)');
+    $q->execute([$store,$roleId,$login,$hash,$castName,$castId]);respond(201,['user_id'=>(int)$wfdb->lastInsertId(),'cast_id'=>$castId,'login_id'=>$login]);
 }
 
 /* Master data CRUD: create and update only; delete is always a soft-disable. */

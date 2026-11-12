@@ -16,7 +16,7 @@ $user=$_SESSION['user']??null;$error='';
 if($_SERVER['REQUEST_METHOD']==='POST'){
  verify_csrf();$action=(string)($_POST['action']??'');
  if($action==='login'){
-  try{$q=db()->prepare("SELECT u.id,u.store_id,u.login_id,u.password_hash,u.display_name,r.role_code FROM users u JOIN roles r ON r.id=u.role_id JOIN stores s ON s.id=u.store_id WHERE u.login_id=? AND s.store_code=? AND u.is_active=1 AND s.is_active=1 LIMIT 1");$q->execute([trim((string)($_POST['login_id']??'')),trim((string)($_POST['store_code']??''))]);$found=$q->fetch();
+  try{$q=db()->prepare("SELECT u.id,u.store_id,u.login_id,u.password_hash,u.display_name,u.cast_id,r.role_code FROM users u JOIN roles r ON r.id=u.role_id JOIN stores s ON s.id=u.store_id WHERE u.login_id=? AND s.store_code=? AND u.is_active=1 AND s.is_active=1 LIMIT 1");$q->execute([trim((string)($_POST['login_id']??'')),trim((string)($_POST['store_code']??''))]);$found=$q->fetch();
    if($found&&password_verify((string)($_POST['password']??''),$found['password_hash'])){session_regenerate_id(true);unset($found['password_hash']);$_SESSION['user']=$found;$_SESSION['csrf']=bin2hex(random_bytes(32));db()->prepare('UPDATE users SET last_login_at=UTC_TIMESTAMP(3) WHERE id=?')->execute([$found['id']]);header('Location: index.php');exit;}
    $error='ログインIDまたはパスワードが違います。';
   }catch(Throwable $e){error_log('POS login failure: '.$e->getMessage());$error='ログインに失敗しました。DB設定と初期データを確認してください。';}
@@ -25,12 +25,16 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 $user=$_SESSION['user']??null;
 ?><!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Girls Bar POS</title><link rel="stylesheet" href="pos.css?v=3"></head>
-<body><main class="wrap">
+<body data-role="<?=h($user['role_code']??'guest')?>"><main class="wrap">
 <header><h1>Girls Bar POS</h1><?php if($user):?><form method="post"><input type="hidden" name="_csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="logout"><button>ログアウト</button></form><?php endif;?></header>
 <?php if($error):?><p class="error"><?=h($error)?></p><?php endif;?>
 <?php if(!$user):?>
 <section class="panel" style="max-width:440px;margin:8vh auto"><h2>店舗ログイン</h2><form method="post" autocomplete="on"><input type="hidden" name="_csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="login"><label>店舗コード</label><input name="store_code" required autocomplete="organization"><label>ログインID</label><input name="login_id" required autocomplete="username"><label>パスワード</label><input type="password" name="password" required autocomplete="current-password"><button type="submit">ログイン</button></form><p class="muted">店舗管理者から発行されたアカウントでログインしてください。</p></section>
 <?php else:?>
+<?php if(($user['role_code']??'')==='cast'): ?>
+<section class="panel"><h2><?=h($user['display_name'])?> さん / キャストページ</h2><p class="muted">出勤・退勤と確定済み給与を確認できます。</p><div class="row"><button id="castClockIn">出勤する</button><button id="castClockOut" class="secondary">退勤する</button><button id="castRefresh" class="secondary">更新</button></div><h3>勤怠履歴</h3><pre id="castAttendance" class="status">読込中</pre><h3>給与履歴</h3><pre id="castPayroll" class="status">読込中</pre></section>
+<script src="pos_cast.js" defer></script>
+<?php else: ?>
 <section class="panel"><h2><?=h($user['display_name'])?> さん / POS</h2><p class="muted">店舗ID <?=h($user['store_id'])?> ・ 権限 <?=h($user['role_code'])?></p><div id="tables" class="tables"></div><button id="refresh" class="secondary">最新状態に更新</button></section>
 <section class="panel"><h2>着席・セット・注文</h2><div class="grid">
 <div><label>卓ID（空席を選択）</label><input id="tableid" type="number" min="1"><label>人数</label><input id="people" type="number" min="1" value="1"><button id="seat">着席開始</button></div>
@@ -56,6 +60,7 @@ $user=$_SESSION['user']??null;
 <div><h3>セット・延長</h3><label>セット名</label><input id="newset"><label>時間（分）</label><input id="newduration" type="number" min="1" value="60"><label>料金</label><input id="newsetprice" type="number" min="0"><label><input id="extension" type="checkbox"> 延長メニュー</label><button id="addmasterset">セットを追加</button><label>変更するセット</label><select id="editset"></select><input id="editsetname"><input id="editsetduration" type="number" min="1"><input id="editsetprice" type="number" min="0"><label><input id="editextension" type="checkbox"> 延長メニュー</label><button id="updateset">セットを更新</button><button id="stopset" class="secondary">セットを利用停止</button></div>
 <div><h3>キャスト</h3><label>コード</label><input id="newcastcode"><label>名前</label><input id="newcastname"><label>時給</label><input id="newwage" type="number" min="0"><button id="addcast">キャストを追加</button><label>変更するキャスト</label><select id="editcast"></select><input id="editcastcode"><input id="editcastname"><input id="editcastwage" type="number" min="0"><button id="updatecast">キャストを更新</button><button id="stopcast" class="secondary">キャストを利用停止</button></div>
 </div><p class="muted">利用停止は過去の履歴を削除しません。給与・売上の訂正は管理者による履歴管理が必要です。</p></section>
-<div id="message" class="status">接続しています…</div><script src="pos.js?v=3" defer></script>
+<div id="message" class="status">接続しています…</div><script src="pos.js?v=4" defer></script>
+<?php endif; ?>
 <?php endif;?>
 </main></body></html>

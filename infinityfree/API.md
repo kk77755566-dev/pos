@@ -43,7 +43,9 @@ All routes below are same-origin PHP requests and require the authenticated PHP 
 - `PUT api.php?r=settings`: update tax, service fee and work-time rounding settings; manager/owner only.
 - `POST api.php?r=payments`: register cash/card/QR/etc. payment; only closes a session when the calculated balance reaches zero.
 - `POST api.php?r=payments/{payment_id}/refund`: manager/owner refund record; reason and idempotency key required.
-- `POST api.php?r=attendance/clock-in|clock-out`: JSON `{"cast_id":1}`.
+- `POST api.php?r=attendance/clock-in|clock-out`: staff records attendance for a cast using JSON `{"cast_id":1}`.
+- `POST api.php?r=casts/{id}/account`: owner/manager creates a linked cast login account; login ID is 4–120 safe characters and password is at least 12 characters.
+- Cast self-service: `GET api.php?r=cast/me`, `POST api.php?r=cast/clock-in`, and `POST api.php?r=cast/clock-out`; the cast ID is derived from the authenticated account.
 - `POST api.php?r=attendance/break`: manager/owner correction; JSON `{"attendance_id":1,"break_minutes":60}`; only before payroll confirmation.
 - `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: snapshots effective hourly wage, rounded minutes and back; blocks missing clock-out and insufficient recorded statutory break.
 - `POST api.php?r=expenses`: manager/owner expense record with business date, category and amount.
