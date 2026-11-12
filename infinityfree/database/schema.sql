@@ -314,6 +314,21 @@ CREATE TABLE payments (
   CONSTRAINT chk_payments_amount CHECK (amount >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE session_charge_snapshots (
+  store_id BIGINT UNSIGNED NOT NULL,
+  session_id BIGINT UNSIGNED NOT NULL,
+  items_subtotal DECIMAL(12,2) NOT NULL,
+  sets_subtotal DECIMAL(12,2) NOT NULL,
+  subtotal DECIMAL(12,2) NOT NULL,
+  service_amount DECIMAL(12,2) NOT NULL,
+  tax_amount DECIMAL(12,2) NOT NULL,
+  total_amount DECIMAL(12,2) NOT NULL,
+  settings_snapshot JSON NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (store_id, session_id),
+  CONSTRAINT fk_charge_snapshot_session FOREIGN KEY (store_id, session_id) REFERENCES table_sessions(store_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE payment_refunds (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   store_id BIGINT UNSIGNED NOT NULL,
