@@ -981,9 +981,10 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                         "type": "table_session", "id": s["id"],
                     })
 
-            # Remove unresolved errors from an earlier blocked attempt before recording this run.
+            # Preserve the history of prior failed attempts; resolve them before recording this run.
             cur.execute(
-                "DELETE FROM closing_errors WHERE store_id=%s AND daily_closing_id=%s",
+                """UPDATE closing_errors SET resolved_at=UTC_TIMESTAMP(3)
+                    WHERE store_id=%s AND daily_closing_id=%s AND resolved_at IS NULL""",
                 (store_id, closing_id),
             )
             for error in errors:
