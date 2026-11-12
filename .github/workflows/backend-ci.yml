@@ -41,6 +41,19 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql
+      - name: Lint InfinityFree PHP files
+        run: |
+          php -l ../infinityfree/index.php
+          php -l ../infinityfree/config.example.php
+      - name: Validate InfinityFree schema on MySQL 8
+        working-directory: .
+        run: |
+          mysql -h127.0.0.1 -uroot -prootpass -e "CREATE DATABASE girlsbar_pos_infinityfree CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+          mysql -h127.0.0.1 -uroot -prootpass girlsbar_pos_infinityfree < infinityfree/database/schema.sql
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
