@@ -356,3 +356,139 @@ def create_order(body: OrderCreateRequest, user: dict[str, Any] = Depends(curren
         raise
     finally:
         conn.close()
+
+
+class SessionCreateRequest(BaseModel):
+    table_id: int = Field(gt=0)
+    customer_count: int = Field(default=1, ge=1, le=100)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+class SessionSetRequest(BaseModel):
+    set_menu_id: int = Field(gt=0)
+    started_at: datetime | None = None
+
+
+@app.post("/api/sessions")
+def create_session(body: SessionCreateRequest, user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    store_id = user["store_id"]
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, table_id, customer_count, status FROM table_sessions WHERE store_id=%s AND idempotency_key=%s",
+                (store_id, body.idempotency_key),
+            )
+            old = cur.fetchone()
+            if old:
+                conn.commit()
+                return {"session_id": old["id"], "table_id": old["table_id"], "status": old["status"], "replayed": True}
+
+            cur.execute(
+                "SELECT id, status FROM tables WHERE store_id=%s AND id=%s AND is_active=1 FOR UPDATE",
+                (store_id, body.table_id),
+            )
+            table = cur.fetchone()
+            if not table:
+                raise HTTPException(status_code=404, detail="Table not found")
+            if table["status"] != "available":
+                raise HTTPException(status_code=409, detail="Table is not available")
+
+            cur.execute(
+                """SELECT id FROM table_sessions
+                    WHERE store_id=%s AND table_id=%s AND status IN ('open','checkout')
+                    LIMIT 1 FOR UPDATE""",
+                (store_id, body.table_id),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Table already has an active session")
+
+            cur.execute(
+                """INSERT INTO table_sessions
+                   (store_id, table_id, customer_count, started_at, status,
+                    created_by_user_id, idempotency_key)
+                   VALUES (%s,%s,%s,COALESCE(%s,UTC_TIMESTAMP(3)),'open',%s,%s)""",
+                (store_id, body.table_id, body.customer_count, body.started_at,
+                 user["user_id"], body.idempotency_key),
+            )
+            session_id = cur.lastrowid
+            cur.execute("UPDATE tables SET status='occupied' WHERE store_id=%s AND id=%s",
+                        (store_id, body.table_id))
+            conn.commit()
+            return {"session_id": session_id, "table_id": body.table_id, "status": "open", "replayed": False}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Session could not be saved") from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/sessions/{session_id}/sets")
+def add_session_set(session_id: int, body: SessionSetRequest,
+                    user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id, status FROM table_sessions WHERE store_id=%s AND id=%s FOR UPDATE",
+                (user["store_id"], session_id),
+            )
+            session = cur.fetchone()
+            if not session or session["status"] != "open":
+                raise HTTPException(status_code=409, detail="Session is not open")
+
+            cur.execute(
+                """SELECT id, name, duration_minutes, price, is_extension
+                     FROM set_menus
+                    WHERE store_id=%s AND id=%s AND is_active=1 FOR UPDATE""",
+                (user["store_id"], body.set_menu_id),
+            )
+            menu = cur.fetchone()
+            if not menu:
+                raise HTTPException(status_code=404, detail="Set menu not found")
+
+            start = body.started_at
+            if start is None:
+                cur.execute("SELECT UTC_TIMESTAMP(3) AS now_utc")
+                start = cur.fetchone()["now_utc"]
+            else:
+                if start.tzinfo is None:
+                    raise HTTPException(status_code=422, detail="started_at must include timezone")
+                start = start.astimezone(timezone.utc).replace(tzinfo=None)
+
+            end = start + timedelta(minutes=int(menu["duration_minutes"]))
+            cur.execute(
+                """INSERT INTO session_set_items
+                   (store_id, session_id, set_menu_id, name_snapshot,
+                    duration_minutes_snapshot, price_snapshot, started_at, ends_at, status)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'active')""",
+                (user["store_id"], session_id, menu["id"], menu["name"],
+                 menu["duration_minutes"], menu["price"], start, end),
+            )
+            set_item_id = cur.lastrowid
+            conn.commit()
+            return {
+                "session_set_item_id": set_item_id,
+                "name": menu["name"],
+                "is_extension": bool(menu["is_extension"]),
+                "price": str(menu["price"]),
+                "started_at": start.isoformat(),
+                "ends_at": end.isoformat(),
+            }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Set registration failed") from None
+    finally:
+        conn.close()
