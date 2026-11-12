@@ -1416,6 +1416,7 @@ def create_product(body: ProductCreate, user: dict[str, Any] = Depends(current_u
                    VALUES (%s,%s,'product_created','product',%s)""",
                 (user["store_id"],user["user_id"],product_id),
             )
+            conn.commit()
             return {"product_id":product_id}
     except pymysql.MySQLError:
         raise HTTPException(status_code=409,detail="Product could not be created; check duplicate or database constraints") from None
@@ -1440,6 +1441,7 @@ def create_set_menu(body: SetMenuCreate, user: dict[str, Any] = Depends(current_
                    VALUES (%s,%s,'set_menu_created','set_menu',%s)""",
                 (user["store_id"],user["user_id"],menu_id),
             )
+            conn.commit()
             return {"set_menu_id":menu_id}
     except pymysql.MySQLError:
         raise HTTPException(status_code=409,detail="Set menu could not be created") from None
@@ -1464,6 +1466,7 @@ def create_cast(body: CastCreate, user: dict[str, Any] = Depends(current_user)):
                    VALUES (%s,%s,'cast_created','cast',%s)""",
                 (user["store_id"],user["user_id"],cast_id),
             )
+            conn.commit()
             return {"cast_id":cast_id}
     except pymysql.MySQLError:
         raise HTTPException(status_code=409,detail="Cast could not be created; cast code may already exist") from None
@@ -1488,6 +1491,7 @@ def create_table(body: TableCreate, user: dict[str, Any] = Depends(current_user)
                    VALUES (%s,%s,'table_created','table',%s)""",
                 (user["store_id"],user["user_id"],table_id),
             )
+            conn.commit()
             return {"table_id":table_id}
     except pymysql.MySQLError:
         raise HTTPException(status_code=409,detail="Table could not be created; table name may already exist") from None
@@ -1624,6 +1628,7 @@ def update_product(product_id: int, body: ProductUpdate, user: dict[str, Any] = 
                 {"product_name":body.product_name,"selling_price":str(body.selling_price),
                  "back_rate":str(body.back_rate),"back_type":body.back_type,"is_active":body.is_active},
                 ["product_name","selling_price","back_rate","back_type","is_active"])
+        conn.commit()
         return {"product_id":product_id,"updated":True}
     except HTTPException:
         raise
@@ -1643,6 +1648,7 @@ def update_set_menu(menu_id: int, body: SetMenuUpdate, user: dict[str, Any] = De
                 {"name":body.name,"duration_minutes":body.duration_minutes,"price":str(body.price),
                  "is_extension":body.is_extension,"is_active":body.is_active},
                 ["name","duration_minutes","price","is_extension","is_active"])
+        conn.commit()
         return {"set_menu_id":menu_id,"updated":True}
     except HTTPException:
         raise
@@ -1662,6 +1668,7 @@ def update_cast(cast_id: int, body: CastUpdate, user: dict[str, Any] = Depends(c
                 {"cast_code":body.cast_code,"cast_name":body.cast_name,
                  "hourly_wage":str(body.hourly_wage),"is_active":body.is_active},
                 ["cast_code","cast_name","hourly_wage","is_active"])
+        conn.commit()
         return {"cast_id":cast_id,"updated":True}
     except HTTPException:
         raise
@@ -1694,6 +1701,7 @@ def update_table(table_id: int, body: TableUpdate, user: dict[str, Any] = Depend
                    VALUES (%s,%s,'table_updated','table',%s,%s)""",
                 (user["store_id"],user["user_id"],table_id,json.dumps(body.model_dump(mode="json"),ensure_ascii=False)),
             )
+        conn.commit()
         return {"table_id":table_id,"updated":True}
     except HTTPException:
         raise
