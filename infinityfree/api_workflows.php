@@ -296,8 +296,8 @@ if (preg_match('#^payments/([0-9]+)/refund$#',$route,$m)) {
     $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM payment_refunds WHERE store_id=? AND payment_id=?');$q->execute([$store,$pid]);$already=(float)$q->fetchColumn();if($amount>(float)$p['amount']-$already+0.001){$wfdb->rollBack();respond(422,['error'=>'返金可能額を超えています']);}
     $wfdb->prepare('INSERT INTO payment_refunds(store_id,payment_id,business_date,amount,reason,refunded_at,created_by_user_id,idempotency_key) VALUES(?,?,?,?,?,UTC_TIMESTAMP(3),?,?)')->execute([$store,$pid,$p['business_date'],$amount,$reason,(int)$u['id'],$key]);$rid=(int)$wfdb->lastInsertId();
     if($already+$amount>=(float)$p['amount']-0.001)$wfdb->prepare("UPDATE payments SET status='refunded' WHERE store_id=? AND id=?")->execute([$store,$pid]);
-    $q=$wfdb->prepare('SELECT session_id,table_id FROM table_sessions WHERE store_id=? AND id=(SELECT session_id FROM payments WHERE store_id=? AND id=?) FOR UPDATE');$q->execute([$store,$store,$pid]);$sessionRow=$q->fetch();
-    if($sessionRow){$wfdb->prepare("UPDATE table_sessions SET status='checkout',ended_at=NULL WHERE store_id=? AND id=?")->execute([$store,$sessionRow['session_id']]);$wfdb->prepare("UPDATE tables SET status='checkout' WHERE store_id=? AND id=?")->execute([$store,$sessionRow['table_id']]);}
+    $q=$wfdb->prepare('SELECT id,table_id FROM table_sessions WHERE store_id=? AND id=(SELECT session_id FROM payments WHERE store_id=? AND id=?) FOR UPDATE');$q->execute([$store,$store,$pid]);$sessionRow=$q->fetch();
+    if($sessionRow){$wfdb->prepare("UPDATE table_sessions SET status='checkout',ended_at=NULL WHERE store_id=? AND id=?")->execute([$store,$sessionRow['id']]);$wfdb->prepare("UPDATE tables SET status='checkout' WHERE store_id=? AND id=?")->execute([$store,$sessionRow['table_id']]);}
     $wfdb->commit();respond(201,['refund_id'=>$rid,'refunded_total'=>$already+$amount,'session_reopened'=>true]);
 }
 if ($route === 'closings/run') {
