@@ -10,14 +10,14 @@ This is a PHP/MySQL website port foundation for the Girls Bar POS. It is deliber
 - Store-scoped table list
 - MySQL schema copy using utf8mb4_unicode_ci
 
-The full POS workflows (orders, set extensions, back allocations, billing, payment/refund, attendance, payroll and daily closing) still need to be ported from `backend/app/main.py` into ordinary browser-facing PHP page/form handlers and tested on the target host. Do not use the FastAPI app or Dockerfile on InfinityFree.
+The current PHP page is only the deployment foundation: login and store-scoped table list. The full POS workflows (orders, set extensions, back allocations, billing, payment/refund, attendance, payroll and daily closing) still need to be ported from `backend/app/main.py` into ordinary browser-facing PHP page/form handlers and tested on the target host. Do not use the FastAPI app or Dockerfile on InfinityFree.
 
 ## Prepare hosting
 1. Create an InfinityFree hosting account and a free subdomain.
 2. In Control Panel, create a MySQL database.
-3. Copy `config.example.php` to `config.php` and enter the exact MySQL host, database name, username and password from the control panel. Generate a random app_secret of at least 64 characters.
-4. Upload the contents of this directory to `htdocs` using the File Manager or FTP. Upload `config.php` only after filling it locally; never commit it to GitHub.
-5. Import `database/schema.sql` using phpMyAdmin.
+3. Copy `config.example.php` to `config.php` on your own computer and enter the exact MySQL host, database name, username and password from the control panel. Generate a random app_secret of at least 64 characters. Never commit `config.php`.
+4. Upload only `index.php` and `.htaccess` to `htdocs`. Also upload your private `config.php` after filling it locally. Do not upload `config.example.php`, `bootstrap_owner.php`, or the `database` folder.
+5. Import the local file `database/schema.sql` using phpMyAdmin (this file is not placed in the public website directory).
 6. Use HTTPS and confirm the browser shows the secure connection before staff login.
 7. Create the first store and owner using a one-time local bootstrap script; do not expose an unauthenticated web setup page on the public site.
 
