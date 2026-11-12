@@ -20,7 +20,7 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 <header><h1>Girls Bar POS</h1><button id="logout" class="secondary hidden" style="width:auto">ログアウト</button></header>
 <main>
 <section id="login" class="panel"><h2>ログイン</h2><div class="grid">
-<div><label>店舗コード</label><input id="store" autocomplete="organization" placeholder="STORE001"></div>
+<div><label>APIサーバーURL</label><input id="apiurl" placeholder="https://your-api.example.com"></div><div><label>店舗コード</label><input id="store" autocomplete="organization" placeholder="STORE001"></div>
 <div><label>ログインID</label><input id="loginid" autocomplete="username"></div>
 <div><label>パスワード</label><input id="password" type="password" autocomplete="current-password"></div>
 </div><button id="loginbtn" style="margin-top:12px">ログイン</button><div id="loginmsg" class="status">APIサーバーに接続してログインしてください。</div></section>
@@ -37,7 +37,7 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 </div></main>
 <script>
 const $=id=>document.getElementById(id);let token="",master={products:[],sets:[],casts:[]};
-const apiBase=localStorage.getItem("girlsbar_api")||location.origin;
+let apiBase=localStorage.getItem("girlsbar_api")||location.origin;\n$("apiurl").value=apiBase;\n$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
 function key(){return crypto.randomUUID()}
 async function api(path,method="GET",body=null){
  const res=await fetch(apiBase+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
