@@ -49,7 +49,7 @@ if ($method === 'GET' && $route === 'payroll') {
     $q->execute([$store,$date]);respond(200,['data'=>$q->fetchAll()]);
 }
 if (!in_array($method,['POST','PUT'],true)) return;
-$workflowWrite = in_array($route,['settings','tables','products','sets','casts','payments','expenses','attendance/clock-in','attendance/clock-out','closings/run'],true)
+$workflowWrite = in_array($route,['settings','tables','products','sets','casts','payments','expenses','attendance/clock-in','attendance/clock-out','attendance/break','closings/run'],true)
     || preg_match('#^(tables|products|sets|casts)/[0-9]+$#',$route)
     || preg_match('#^payments/[0-9]+/refund$#',$route)
     || preg_match('#^casts/[0-9]+/payroll/confirm$#',$route);
@@ -120,6 +120,15 @@ if ($route === 'settings') {
     $q->execute([(int)!!($d['tax_enabled']??false),(float)($d['tax_rate']??0),$d['tax_mode'],(int)!!($d['service_enabled']??false),(float)($d['service_rate']??0),$d['service_mode'],(float)($d['service_fixed_amount']??0),(int)!!($d['service_taxable']??false),$d['service_basis'],$minutes,$d['work_rounding_mode'],(int)$u['id'],$store]);
     respond(200,['ok'=>true]);
 }
+if ($route==='attendance/break') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'休憩修正権限がありません']);
+    $aid=(int)($d['attendance_id']??0);$break=(int)($d['break_minutes']??-1);if($aid<1||$break<0||$break>720)respond(422,['error'=>'休憩時間が不正です']);
+    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id,clock_in_at,clock_out_at FROM attendance WHERE store_id=? AND id=? FOR UPDATE');$q->execute([$store,$aid]);$a=$q->fetch();
+    if(!$a||!$a['clock_out_at']){$wfdb->rollBack();respond(409,['error'=>'退勤済みの勤怠だけ休憩を修正できます']);}
+    $minutes=(int)floor((strtotime($a['clock_out_at'])-strtotime($a['clock_in_at']))/60);if($break>$minutes){$wfdb->rollBack();respond(422,['error'=>'休憩時間が勤務時間を超えています']);}
+    $q=$wfdb->prepare("SELECT COUNT(*) FROM payroll_details p JOIN attendance a ON a.store_id=p.store_id AND a.cast_id=p.cast_id AND a.business_date=p.business_date WHERE a.store_id=? AND a.id=? AND p.status IN ('confirmed','paid')");$q->execute([$store,$aid]);if((int)$q->fetchColumn()){$wfdb->rollBack();respond(409,['error'=>'給与確定後の勤怠は変更できません']);}
+    $wfdb->prepare("UPDATE attendance SET break_minutes=?,status='corrected',updated_by_user_id=? WHERE store_id=? AND id=?")->execute([$break,(int)$u['id'],$store,$aid]);$wfdb->commit();respond(200,['ok'=>true,'attendance_id'=>$aid,'break_minutes'=>$break]);
+}
 if (preg_match('#^attendance/(clock-in|clock-out)$#',$route,$m)) {
     $cast=(int)($d['cast_id']??0);if($cast<1)respond(422,['error'=>'キャストを指定してください']);
     $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id FROM casts WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE');$q->execute([$store,$cast]);
@@ -141,7 +150,7 @@ if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
     $wfdb->beginTransaction();
     $q=$wfdb->prepare('SELECT c.id,COALESCE((SELECT pr.hourly_wage FROM cast_pay_rules pr WHERE pr.store_id=c.store_id AND pr.cast_id=c.id AND pr.valid_from<=? AND (pr.valid_to IS NULL OR pr.valid_to>=?) ORDER BY pr.valid_from DESC LIMIT 1),c.hourly_wage) AS hourly_wage FROM casts c WHERE c.store_id=? AND c.id=? AND c.is_active=1 FOR UPDATE');$q->execute([$date,$date,$store,$cast]);$cst=$q->fetch();if(!$cst){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
     $q=$wfdb->prepare('SELECT COUNT(*) FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NULL');$q->execute([$store,$cast,$date]);if((int)$q->fetchColumn()){$wfdb->rollBack();respond(409,['error'=>'退勤未記録があるため給与を確定できません']);}
-    $q=$wfdb->prepare('SELECT COALESCE(SUM(GREATEST(0,TIMESTAMPDIFF(MINUTE,clock_in_at,clock_out_at)-break_minutes)),0) FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NOT NULL');$q->execute([$store,$cast,$date]);$raw=(int)$q->fetchColumn();
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE,clock_in_at,clock_out_at)),0) gross_minutes,COALESCE(SUM(break_minutes),0) break_minutes FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NOT NULL');$q->execute([$store,$cast,$date]);$time=$q->fetch();$gross=(int)$time['gross_minutes'];$breakMinutes=(int)$time['break_minutes'];$raw=max(0,$gross-$breakMinutes);if($raw>360&&$breakMinutes<45){$wfdb->rollBack();respond(409,['error'=>'実労働6時間超のため45分以上の休憩記録が必要です']);}if($raw>480&&$breakMinutes<60){$wfdb->rollBack();respond(409,['error'=>'実労働8時間超のため60分以上の休憩記録が必要です']);}
     $q=$wfdb->prepare('SELECT work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:['work_rounding_minutes'=>15,'work_rounding_mode'=>'floor'];$unit=(int)$cfg['work_rounding_minutes'];
     $paymins=match($cfg['work_rounding_mode']){'ceil'=>(int)(ceil($raw/$unit)*$unit),'half_up'=>(int)(floor($raw/$unit+0.5)*$unit),default=>(int)(floor($raw/$unit)*$unit)};
     $q=$wfdb->prepare("SELECT COALESCE(SUM(a.back_amount),0) FROM order_item_back_allocations a JOIN order_items i ON i.store_id=a.store_id AND i.id=a.order_item_id JOIN orders o ON o.store_id=i.store_id AND o.id=i.order_id WHERE a.store_id=? AND a.cast_id=? AND a.status='active' AND i.status='active' AND o.status='confirmed' AND EXISTS (SELECT 1 FROM table_sessions ts WHERE ts.store_id=o.store_id AND ts.id=o.session_id AND ts.business_date=?)");$q->execute([$store,$cast,$date]);$back=(float)$q->fetchColumn();
