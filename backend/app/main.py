@@ -1182,3 +1182,125 @@ def cancel_order(order_id: int, body: OrderCancelRequest,
         raise HTTPException(status_code=503, detail="Order cancellation failed") from None
     finally:
         conn.close()
+
+
+@app.post("/api/casts/{cast_id}/payroll/confirm")
+def confirm_cast_payroll(cast_id: int, business_date: str,
+                         user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM casts WHERE store_id=%s AND id=%s AND is_active=1 FOR UPDATE",
+                (user["store_id"], cast_id),
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Cast not found")
+            cur.execute(
+                """SELECT id,clock_in_at,clock_out_at,break_minutes FROM attendance
+                    WHERE store_id=%s AND cast_id=%s AND business_date=%s
+                    ORDER BY clock_in_at FOR UPDATE""",
+                (user["store_id"], cast_id, business_date),
+            )
+            shifts = cur.fetchall()
+            if not shifts:
+                raise HTTPException(status_code=404, detail="No attendance for this date")
+            if any(s["clock_out_at"] is None for s in shifts):
+                raise HTTPException(status_code=409, detail="Clock-out is missing")
+            cur.execute(
+                """SELECT p.id FROM payroll_details p
+                    WHERE p.store_id=%s AND p.cast_id=%s AND p.business_date=%s
+                    FOR UPDATE""",
+                (user["store_id"], cast_id, business_date),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Payroll already exists; use a controlled adjustment process")
+
+            cur.execute(
+                """SELECT c.hourly_wage,
+                          COALESCE((SELECT r.hourly_wage FROM cast_pay_rules r
+                                    WHERE r.store_id=c.store_id AND r.cast_id=c.id
+                                      AND r.valid_from<=%s
+                                      AND (r.valid_to IS NULL OR r.valid_to>=%s)
+                                    ORDER BY r.valid_from DESC LIMIT 1),c.hourly_wage) AS wage
+                     FROM casts c WHERE c.store_id=%s AND c.id=%s""",
+                (business_date,business_date,user["store_id"],cast_id),
+            )
+            wage_row = cur.fetchone()
+            cur.execute(
+                "SELECT work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=%s",
+                (user["store_id"],),
+            )
+            settings = cur.fetchone()
+            if not settings:
+                raise HTTPException(status_code=409, detail="Store settings are missing")
+            raw_minutes=0
+            payable_minutes=0
+            hourly_total=Decimal("0")
+            for shift in shifts:
+                minutes=max(0,int((shift["clock_out_at"]-shift["clock_in_at"]).total_seconds()//60)-int(shift["break_minutes"]))
+                raw_minutes+=minutes
+                unit=int(settings["work_rounding_minutes"])
+                mode=settings["work_rounding_mode"]
+                if mode=="floor": payable=(minutes//unit)*unit
+                elif mode=="ceil": payable=((minutes+unit-1)//unit)*unit
+                else: payable=int((Decimal(minutes)/Decimal(unit)).quantize(Decimal("1"),rounding=ROUND_HALF_UP))*unit
+                payable_minutes+=payable
+                hourly_total+=Decimal(str(wage_row["wage"]))*Decimal(payable)/Decimal(60)
+
+            cur.execute(
+                """SELECT a.id,a.back_amount
+                     FROM order_item_back_allocations a
+                     JOIN order_items oi ON oi.store_id=a.store_id AND oi.id=a.order_item_id
+                     JOIN orders o ON o.store_id=oi.store_id AND o.id=oi.order_id
+                     JOIN table_sessions ts ON ts.store_id=o.store_id AND ts.id=o.session_id
+                    WHERE a.store_id=%s AND a.cast_id=%s AND a.status='active'
+                      AND DATE(ts.started_at)=%s
+                    ORDER BY a.id FOR UPDATE""",
+                (user["store_id"],cast_id,business_date),
+            )
+            allocations=cur.fetchall()
+            back_total=sum((Decimal(str(a["back_amount"])) for a in allocations),Decimal("0"))
+            hourly_total=money(hourly_total)
+            back_total=money(back_total)
+            total=money(hourly_total+back_total)
+            cur.execute(
+                """INSERT INTO payroll_details
+                   (store_id,cast_id,business_date,work_minutes_raw,work_minutes_payable,
+                    rounding_minutes_snapshot,rounding_mode_snapshot,hourly_wage_snapshot,
+                    hourly_pay,back_pay,adjustment,total_pay,status)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,0,%s,'confirmed')""",
+                (user["store_id"],cast_id,business_date,raw_minutes,payable_minutes,
+                 settings["work_rounding_minutes"],settings["work_rounding_mode"],
+                 str(wage_row["wage"]),str(hourly_total),str(back_total),str(total)),
+            )
+            payroll_id=cur.lastrowid
+            for allocation in allocations:
+                cur.execute(
+                    """INSERT INTO payroll_back_details
+                       (store_id,payroll_detail_id,back_allocation_id,back_amount)
+                       VALUES (%s,%s,%s,%s)""",
+                    (user["store_id"],payroll_id,allocation["id"],str(allocation["back_amount"])),
+                )
+            cur.execute(
+                """INSERT INTO audit_logs
+                   (store_id,user_id,action,target_type,target_id,after_json)
+                   VALUES (%s,%s,'payroll_confirmed','payroll_detail',%s,%s)""",
+                (user["store_id"],user["user_id"],payroll_id,
+                 json.dumps({"cast_id":cast_id,"business_date":business_date,"total_pay":str(total)},ensure_ascii=False)),
+            )
+            conn.commit()
+            return {"payroll_id":payroll_id,"cast_id":cast_id,"business_date":business_date,
+                    "work_minutes_raw":raw_minutes,"work_minutes_payable":payable_minutes,
+                    "hourly_pay":str(hourly_total),"back_pay":str(back_total),
+                    "total_pay":str(total),"status":"confirmed"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503,detail="Payroll confirmation failed") from None
+    finally:
+        conn.close()
