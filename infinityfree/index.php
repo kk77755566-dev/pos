@@ -59,9 +59,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "SELECT u.id,u.store_id,u.login_id,u.password_hash,u.display_name,r.role_code
                    FROM users u JOIN roles r ON r.id=u.role_id
                    JOIN stores s ON s.id=u.store_id
-                  WHERE u.login_id=? AND u.is_active=1 AND s.is_active=1 LIMIT 1"
+                  WHERE u.login_id=? AND s.store_code=? AND u.is_active=1 AND s.is_active=1 LIMIT 1"
             );
-            $stmt->execute([trim((string)($_POST['login_id'] ?? ''))]);
+            $stmt->execute([trim((string)($_POST['login_id'] ?? '')), trim((string)($_POST['store_code'] ?? ''))]);
             $user = $stmt->fetch();
             if ($user && password_verify((string)($_POST['password'] ?? ''), $user['password_hash'])) {
                 session_regenerate_id(true);
@@ -131,7 +131,7 @@ button{background:#202b3c;color:#fff;border:0;font-weight:650;cursor:pointer}
 <section class="panel" style="max-width:440px;margin:8vh auto">
 <h2>店舗ログイン</h2><form method="post" autocomplete="on">
 <input type="hidden" name="_csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="login">
-<label>ログインID</label><input name="login_id" required autocomplete="username">
+<label>店舗コード</label><input name="store_code" required autocomplete="organization" placeholder="店舗管理者から指定されたコード"><label>ログインID</label><input name="login_id" required autocomplete="username">
 <label>パスワード</label><input type="password" name="password" required autocomplete="current-password">
 <button type="submit">ログイン</button></form><p class="muted">店舗管理者から発行されたアカウントでログインしてください。</p>
 </section>
