@@ -492,3 +492,162 @@ def add_session_set(session_id: int, body: SessionSetRequest,
         raise HTTPException(status_code=503, detail="Set registration failed") from None
     finally:
         conn.close()
+
+
+class ClockInRequest(BaseModel):
+    cast_id: int = Field(gt=0)
+    business_date: str = Field(pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+
+
+class ClockOutRequest(BaseModel):
+    attendance_id: int = Field(gt=0)
+    break_minutes: int = Field(default=0, ge=0, le=1440)
+
+
+def require_management(role: str):
+    if role not in {"owner", "manager"}:
+        raise HTTPException(status_code=403, detail="Manager permission required")
+
+
+@app.post("/api/attendance/clock-in")
+def clock_in(body: ClockInRequest, user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM casts WHERE store_id=%s AND id=%s AND is_active=1 FOR UPDATE",
+                        (user["store_id"], body.cast_id))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Cast not found")
+            cur.execute(
+                "SELECT id FROM attendance WHERE store_id=%s AND cast_id=%s AND clock_out_at IS NULL LIMIT 1 FOR UPDATE",
+                (user["store_id"], body.cast_id),
+            )
+            if cur.fetchone():
+                raise HTTPException(status_code=409, detail="Cast is already clocked in")
+            cur.execute(
+                """INSERT INTO attendance
+                   (store_id,cast_id,business_date,clock_in_at,status,created_by_user_id)
+                   VALUES (%s,%s,%s,UTC_TIMESTAMP(3),'working',%s)""",
+                (user["store_id"], body.cast_id, body.business_date, user["user_id"]),
+            )
+            attendance_id = cur.lastrowid
+            conn.commit()
+            return {"attendance_id": attendance_id, "cast_id": body.cast_id, "status": "working"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Clock-in could not be saved") from None
+    finally:
+        conn.close()
+
+
+@app.post("/api/attendance/clock-out")
+def clock_out(body: ClockOutRequest, user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, clock_in_at, clock_out_at FROM attendance
+                    WHERE store_id=%s AND id=%s FOR UPDATE""",
+                (user["store_id"], body.attendance_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Attendance record not found")
+            if row["clock_out_at"] is not None:
+                raise HTTPException(status_code=409, detail="Already clocked out")
+            cur.execute(
+                """UPDATE attendance SET clock_out_at=UTC_TIMESTAMP(3),
+                       break_minutes=%s,status='completed',updated_by_user_id=%s
+                    WHERE store_id=%s AND id=%s""",
+                (body.break_minutes, user["user_id"], user["store_id"], body.attendance_id),
+            )
+            conn.commit()
+            return {"attendance_id": body.attendance_id, "status": "completed"}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Clock-out could not be saved") from None
+    finally:
+        conn.close()
+
+
+@app.get("/api/casts/{cast_id}/payroll")
+def get_cast_payroll(cast_id: int, business_date: str,
+                     user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT a.id, a.clock_in_at, a.clock_out_at, a.break_minutes,
+                          c.hourly_wage,
+                          COALESCE((SELECT p.hourly_wage FROM cast_pay_rules p
+                                    WHERE p.store_id=a.store_id AND p.cast_id=a.cast_id
+                                      AND p.valid_from <= a.business_date
+                                      AND (p.valid_to IS NULL OR p.valid_to >= a.business_date)
+                                    ORDER BY p.valid_from DESC LIMIT 1), c.hourly_wage) AS wage
+                     FROM attendance a JOIN casts c
+                       ON c.store_id=a.store_id AND c.id=a.cast_id
+                    WHERE a.store_id=%s AND a.cast_id=%s AND a.business_date=%s
+                    ORDER BY a.clock_in_at""",
+                (user["store_id"], cast_id, business_date),
+            )
+            shifts = cur.fetchall()
+            if not shifts:
+                raise HTTPException(status_code=404, detail="No attendance for this date")
+            if any(s["clock_out_at"] is None for s in shifts):
+                raise HTTPException(status_code=409, detail="Clock-out is missing; payroll is not final")
+            cur.execute(
+                """SELECT COALESCE(SUM(a.back_amount),0) AS back_total
+                     FROM order_item_back_allocations a
+                     JOIN order_items oi ON oi.store_id=a.store_id AND oi.id=a.order_item_id
+                     JOIN orders o ON o.store_id=oi.store_id AND o.id=oi.order_id
+                     JOIN table_sessions ts ON ts.store_id=o.store_id AND ts.id=o.session_id
+                    WHERE a.store_id=%s AND a.cast_id=%s AND a.status='active'
+                      AND DATE(ts.started_at)=%s""",
+                (user["store_id"], cast_id, business_date),
+            )
+            back_total = Decimal(str(cur.fetchone()["back_total"] or 0))
+            cur.execute(
+                "SELECT work_rounding_minutes, work_rounding_mode FROM store_settings WHERE store_id=%s",
+                (user["store_id"],),
+            )
+            settings = cur.fetchone()
+            if not settings:
+                raise HTTPException(status_code=409, detail="Store settings are missing")
+            raw_minutes = 0
+            hourly_total = Decimal("0")
+            for shift in shifts:
+                duration = shift["clock_out_at"] - shift["clock_in_at"]
+                minutes = max(0, int(duration.total_seconds() // 60) - int(shift["break_minutes"]))
+                raw_minutes += minutes
+                unit = int(settings["work_rounding_minutes"])
+                if settings["work_rounding_mode"] == "floor":
+                    payable = (minutes // unit) * unit
+                elif settings["work_rounding_mode"] == "ceil":
+                    payable = ((minutes + unit - 1) // unit) * unit
+                else:
+                    payable = int((Decimal(minutes) / Decimal(unit)).quantize(Decimal("1"), rounding=ROUND_HALF_UP)) * unit
+                hourly_total += Decimal(str(shift["wage"])) * Decimal(payable) / Decimal(60)
+            hourly_total = money(hourly_total)
+            return {
+                "cast_id": cast_id, "business_date": business_date,
+                "shift_count": len(shifts), "work_minutes_raw": raw_minutes,
+                "hourly_pay": str(hourly_total), "back_pay": str(money(back_total)),
+                "total_pay": str(money(hourly_total + back_total)),
+                "rounding_minutes": int(settings["work_rounding_minutes"]),
+                "rounding_mode": settings["work_rounding_mode"],
+                "provisional": True,
+                "notice": "深夜・時間外割増、最低賃金、法定休憩等の確認前の暫定集計です。",
+            }
+    finally:
+        conn.close()
