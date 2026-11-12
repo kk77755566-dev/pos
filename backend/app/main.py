@@ -934,19 +934,27 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
             ])
 
             cur.execute(
-                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS total,
-                          COALESCE(SUM(CASE WHEN p.payment_method='cash' THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS cash_total,
-                          COALESCE(SUM(CASE WHEN p.payment_method='credit_card' THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS card_total,
-                          COALESCE(SUM(CASE WHEN p.payment_method NOT IN ('cash','credit_card') THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS other_total
+                """SELECT COALESCE(SUM(p.amount),0) AS total,
+                          COALESCE(SUM(CASE WHEN p.payment_method='cash' THEN p.amount ELSE 0 END),0) AS cash_total,
+                          COALESCE(SUM(CASE WHEN p.payment_method='credit_card' THEN p.amount ELSE 0 END),0) AS card_total,
+                          COALESCE(SUM(CASE WHEN p.payment_method NOT IN ('cash','credit_card') THEN p.amount ELSE 0 END),0) AS other_total
                      FROM payments p JOIN table_sessions s
                        ON s.store_id=p.store_id AND s.id=p.session_id
-                     LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
-                                  FROM payment_refunds GROUP BY store_id,payment_id) r
-                       ON r.store_id=p.store_id AND r.payment_id=p.id
                     WHERE p.store_id=%s AND DATE(s.started_at)=%s AND p.status IN ('completed','refunded')""",
                 (store_id, body.business_date),
             )
             sales = cur.fetchone()
+            cur.execute(
+                """SELECT COALESCE(SUM(r.amount),0) AS refund_total,
+                          COALESCE(SUM(CASE WHEN p.payment_method='cash' THEN r.amount ELSE 0 END),0) AS cash_refunds,
+                          COALESCE(SUM(CASE WHEN p.payment_method='credit_card' THEN r.amount ELSE 0 END),0) AS card_refunds,
+                          COALESCE(SUM(CASE WHEN p.payment_method NOT IN ('cash','credit_card') THEN r.amount ELSE 0 END),0) AS other_refunds
+                     FROM payment_refunds r JOIN payments p
+                       ON p.store_id=r.store_id AND p.id=r.payment_id
+                    WHERE r.store_id=%s AND r.business_date=%s""",
+                (store_id, body.business_date),
+            )
+            refunds = cur.fetchone()
             cur.execute(
                 "SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE store_id=%s AND business_date=%s",
                 (store_id, body.business_date),
@@ -1032,7 +1040,7 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 "service_taxable": bool(settings["service_taxable"]),
                 "service_basis": settings["service_basis"],
             }
-            sales_total = Decimal(str(sales["total"] or 0))
+            refund_total = Decimal(str(refunds["refund_total"] or 0))\n            sales_total = Decimal(str(sales["total"] or 0)) - refund_total
             cur.execute(
                 """UPDATE daily_closings SET status=%s,
                        sales_subtotal=%s, service_total=%s, tax_total=%s, sales_total=%s,
