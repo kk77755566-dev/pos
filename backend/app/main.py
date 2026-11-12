@@ -1552,7 +1552,8 @@ def update_store_settings(body: StoreSettingsUpdate, user: dict[str, Any] = Depe
 
 @app.get("/api/settings")
 def get_store_settings(user: dict[str, Any] = Depends(current_user)):
-    require_owner_or_manager(user["role"])
+    if user["role"] not in {"owner","manager","staff"}:
+        raise HTTPException(status_code=403,detail="Insufficient permission")
     conn=db_connection()
     try:
         with conn.cursor() as cur:
