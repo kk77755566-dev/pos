@@ -98,13 +98,13 @@ if ($route==='casts' && $method==='POST') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
     $code=trim((string)($d['cast_code']??''));$name=trim((string)($d['cast_name']??''));$wage=(float)($d['hourly_wage']??-1);
     if($code===''||mb_strlen($code)>40||$name===''||mb_strlen($name)>120||$wage<0)respond(422,['error'=>'キャスト情報が不正です']);
-    $q=$wfdb->prepare('INSERT INTO casts(store_id,cast_code,cast_name,hourly_wage,is_active) VALUES(?,?,?,?,1)');$q->execute([$store,$code,$name,$wage]);respond(201,['id'=>(int)$wfdb->lastInsertId()]);
+    $wfdb->beginTransaction();$q=$wfdb->prepare('INSERT INTO casts(store_id,cast_code,cast_name,hourly_wage,is_active) VALUES(?,?,?,?,1)');$q->execute([$store,$code,$name,$wage]);$castId=(int)$wfdb->lastInsertId();$effective=businessDate($wfdb,$store);$wfdb->prepare('INSERT INTO cast_pay_rules(store_id,cast_id,hourly_wage,valid_from) VALUES(?,?,?,?)')->execute([$store,$castId,$wage,$effective]);$wfdb->commit();respond(201,['id'=>$castId]);
 }
 if (preg_match('#^casts/([0-9]+)$#',$route,$m) && $method==='PUT') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
     $id=(int)$m[1];$code=trim((string)($d['cast_code']??''));$name=trim((string)($d['cast_name']??''));$wage=(float)($d['hourly_wage']??-1);$active=(int)!!($d['is_active']??true);
     if($code===''||mb_strlen($code)>40||$name===''||mb_strlen($name)>120||$wage<0)respond(422,['error'=>'キャスト情報が不正です']);
-    $q=$wfdb->prepare('UPDATE casts SET cast_code=?,cast_name=?,hourly_wage=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$code,$name,$wage,$active,$store,$id]);respond(200,['ok'=>true]);
+    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT hourly_wage FROM casts WHERE store_id=? AND id=? FOR UPDATE');$q->execute([$store,$id]);$existing=$q->fetch();if(!$existing){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}$oldWage=(float)$existing['hourly_wage'];$wfdb->prepare('UPDATE casts SET cast_code=?,cast_name=?,hourly_wage=?,is_active=? WHERE store_id=? AND id=?')->execute([$code,$name,$wage,$active,$store,$id]);if(abs($oldWage-$wage)>0.0001){$effective=businessDate($wfdb,$store);$wfdb->prepare('UPDATE cast_pay_rules SET valid_to=DATE_SUB(?,INTERVAL 1 DAY) WHERE store_id=? AND cast_id=? AND valid_to IS NULL AND valid_from<?')->execute([$effective,$store,$id,$effective]);$wfdb->prepare('INSERT INTO cast_pay_rules(store_id,cast_id,hourly_wage,valid_from) VALUES(?,?,?,?) ON DUPLICATE KEY UPDATE hourly_wage=VALUES(hourly_wage),valid_to=NULL')->execute([$store,$id,$wage,$effective]);}$wfdb->commit();respond(200,['ok'=>true]);
 }
 if ($route==='expenses' && $method==='POST') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'経費登録権限がありません']);
@@ -139,7 +139,7 @@ if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'給与確定権限がありません']);
     $cast=(int)$m[1];$date=(string)($_GET['business_date']??'');if(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',$date))respond(422,['error'=>'対象日が不正です']);
     $wfdb->beginTransaction();
-    $q=$wfdb->prepare('SELECT id,hourly_wage FROM casts WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE');$q->execute([$store,$cast]);$cst=$q->fetch();if(!$cst){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
+    $q=$wfdb->prepare('SELECT c.id,COALESCE((SELECT pr.hourly_wage FROM cast_pay_rules pr WHERE pr.store_id=c.store_id AND pr.cast_id=c.id AND pr.valid_from<=? AND (pr.valid_to IS NULL OR pr.valid_to>=?) ORDER BY pr.valid_from DESC LIMIT 1),c.hourly_wage) AS hourly_wage FROM casts c WHERE c.store_id=? AND c.id=? AND c.is_active=1 FOR UPDATE');$q->execute([$date,$date,$store,$cast]);$cst=$q->fetch();if(!$cst){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
     $q=$wfdb->prepare('SELECT COUNT(*) FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NULL');$q->execute([$store,$cast,$date]);if((int)$q->fetchColumn()){$wfdb->rollBack();respond(409,['error'=>'退勤未記録があるため給与を確定できません']);}
     $q=$wfdb->prepare('SELECT COALESCE(SUM(GREATEST(0,TIMESTAMPDIFF(MINUTE,clock_in_at,clock_out_at)-break_minutes)),0) FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NOT NULL');$q->execute([$store,$cast,$date]);$raw=(int)$q->fetchColumn();
     $q=$wfdb->prepare('SELECT work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:['work_rounding_minutes'=>15,'work_rounding_mode'=>'floor'];$unit=(int)$cfg['work_rounding_minutes'];
