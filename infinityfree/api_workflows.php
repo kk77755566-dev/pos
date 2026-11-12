@@ -35,7 +35,7 @@ if ($method === 'GET' && $route === 'payroll') {
     $q=$wfdb->prepare('SELECT p.*,c.cast_name FROM payroll_details p JOIN casts c ON c.store_id=p.store_id AND c.id=p.cast_id WHERE p.store_id=? AND p.business_date=? ORDER BY c.cast_name');
     $q->execute([$store,$date]);respond(200,['data'=>$q->fetchAll()]);
 }
-if ($method !== 'POST') return;
+if (!in_array($method,['POST','PUT'],true)) return;
 csrf(); staff($u); $d=input();
 
 if ($route === 'settings') {
