@@ -1539,3 +1539,129 @@ def get_store_settings(user: dict[str, Any] = Depends(current_user)):
             return row
     finally:
         conn.close()
+
+
+class ProductUpdate(ProductCreate):
+    is_active: bool = True
+
+
+class SetMenuUpdate(SetMenuCreate):
+    is_active: bool = True
+
+
+class CastUpdate(CastCreate):
+    is_active: bool = True
+
+
+class TableUpdate(TableCreate):
+    is_active: bool = True
+
+
+def audited_update(cur, store_id, user_id, table, target_type, target_id, values, columns):
+    cur.execute(
+        f"SELECT * FROM {table} WHERE store_id=%s AND id=%s FOR UPDATE",
+        (store_id, target_id),
+    )
+    before = cur.fetchone()
+    if not before:
+        raise HTTPException(status_code=404, detail=f"{target_type} not found")
+    assignments = ",".join(f"{column}=%s" for column in columns)
+    params = [values[column] for column in columns] + [store_id, target_id]
+    cur.execute(f"UPDATE {table} SET {assignments} WHERE store_id=%s AND id=%s", params)
+    after = {column: str(values[column]) if isinstance(values[column], Decimal) else values[column] for column in columns}
+    cur.execute(
+        """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id,before_json,after_json)
+           VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+        (store_id,user_id,f"{target_type}_updated",target_type,target_id,
+         json.dumps({k: str(before.get(k)) for k in columns},ensure_ascii=False),
+         json.dumps(after,ensure_ascii=False)),
+    )
+
+
+@app.put("/api/products/{product_id}")
+def update_product(product_id: int, body: ProductUpdate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            audited_update(cur,user["store_id"],user["user_id"],"products","product",product_id,
+                {"product_name":body.product_name,"selling_price":str(body.selling_price),
+                 "back_rate":str(body.back_rate),"back_type":body.back_type,"is_active":body.is_active},
+                ["product_name","selling_price","back_rate","back_type","is_active"])
+        return {"product_id":product_id,"updated":True}
+    except HTTPException:
+        raise
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Product update failed") from None
+    finally:
+        conn.close()
+
+
+@app.put("/api/set-menus/{menu_id}")
+def update_set_menu(menu_id: int, body: SetMenuUpdate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            audited_update(cur,user["store_id"],user["user_id"],"set_menus","set_menu",menu_id,
+                {"name":body.name,"duration_minutes":body.duration_minutes,"price":str(body.price),
+                 "is_extension":body.is_extension,"is_active":body.is_active},
+                ["name","duration_minutes","price","is_extension","is_active"])
+        return {"set_menu_id":menu_id,"updated":True}
+    except HTTPException:
+        raise
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Set menu update failed") from None
+    finally:
+        conn.close()
+
+
+@app.put("/api/casts/{cast_id}")
+def update_cast(cast_id: int, body: CastUpdate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            audited_update(cur,user["store_id"],user["user_id"],"casts","cast",cast_id,
+                {"cast_code":body.cast_code,"cast_name":body.cast_name,
+                 "hourly_wage":str(body.hourly_wage),"is_active":body.is_active},
+                ["cast_code","cast_name","hourly_wage","is_active"])
+        return {"cast_id":cast_id,"updated":True}
+    except HTTPException:
+        raise
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Cast update failed") from None
+    finally:
+        conn.close()
+
+
+@app.put("/api/tables/{table_id}")
+def update_table(table_id: int, body: TableUpdate, user: dict[str, Any] = Depends(current_user)):
+    require_owner_or_manager(user["role"])
+    conn=db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM tables WHERE store_id=%s AND id=%s FOR UPDATE",
+                        (user["store_id"],table_id))
+            table=cur.fetchone()
+            if not table:
+                raise HTTPException(status_code=404,detail="Table not found")
+            if not body.is_active and table["status"] != "available":
+                raise HTTPException(status_code=409,detail="Only an available table can be disabled")
+            status_value = "available" if body.is_active and table["status"]=="disabled" else ("disabled" if not body.is_active else table["status"])
+            cur.execute(
+                "UPDATE tables SET table_name=%s,capacity=%s,is_active=%s,status=%s WHERE store_id=%s AND id=%s",
+                (body.table_name,body.capacity,body.is_active,status_value,user["store_id"],table_id),
+            )
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id,after_json)
+                   VALUES (%s,%s,'table_updated','table',%s,%s)""",
+                (user["store_id"],user["user_id"],table_id,json.dumps(body.model_dump(mode="json"),ensure_ascii=False)),
+            )
+        return {"table_id":table_id,"updated":True}
+    except HTTPException:
+        raise
+    except pymysql.MySQLError:
+        raise HTTPException(status_code=409,detail="Table update failed") from None
+    finally:
+        conn.close()
