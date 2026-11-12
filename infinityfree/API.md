@@ -47,7 +47,7 @@ All routes below are same-origin PHP requests and require the authenticated PHP 
 - `POST api.php?r=casts/{id}/account`: owner/manager creates a linked cast login account; login ID is 4–120 safe characters and password is at least 12 characters.
 - Cast self-service: `GET api.php?r=cast/me`, `POST api.php?r=cast/clock-in`, and `POST api.php?r=cast/clock-out`; the cast ID is derived from the authenticated account.
 - `POST api.php?r=attendance/break`: manager/owner correction; JSON `{"attendance_id":1,"break_minutes":60}`; only before payroll confirmation.
-- `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: snapshots effective hourly wage, rounded minutes and back; blocks missing clock-out and insufficient recorded statutory break.
+- `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: snapshots effective hourly wage, rounded minutes and back; accepts optional `adjustment` and required `adjustment_reason` when nonzero; blocks missing clock-out and insufficient recorded statutory break.
 - `POST api.php?r=expenses`: manager/owner expense record with business date, category and amount.
 - `POST api.php?r=closings/run`: manager/owner daily close. Blocks open sessions, missing clock-outs, unconfirmed payroll and payment reconciliation differences; stores closing breakdown and detail rows.
 

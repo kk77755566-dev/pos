@@ -41,7 +41,7 @@ if ($method==='GET' && $route==='cast/me') {
     if(($u['role_code']??'')!=='cast'||empty($u['cast_id']))respond(403,['error'=>'キャスト専用アカウントが必要です']);
     $castId=(int)$u['cast_id'];$date=businessDate($wfdb,$store);
     $q=$wfdb->prepare('SELECT id,business_date,clock_in_at,clock_out_at,break_minutes,status FROM attendance WHERE store_id=? AND cast_id=? ORDER BY business_date DESC,clock_in_at DESC LIMIT 60');$q->execute([$store,$castId]);$attendance=$q->fetchAll();
-    $q=$wfdb->prepare('SELECT business_date,work_minutes_raw,work_minutes_payable,hourly_wage_snapshot,hourly_pay,back_pay,adjustment,total_pay,status FROM payroll_details WHERE store_id=? AND cast_id=? ORDER BY business_date DESC LIMIT 60');$q->execute([$store,$castId]);$payroll=$q->fetchAll();
+    $q=$wfdb->prepare('SELECT business_date,work_minutes_raw,work_minutes_payable,hourly_wage_snapshot,hourly_pay,back_pay,adjustment,adjustment_reason,total_pay,status FROM payroll_details WHERE store_id=? AND cast_id=? ORDER BY business_date DESC LIMIT 60');$q->execute([$store,$castId]);$payroll=$q->fetchAll();
     respond(200,['cast_id'=>$castId,'business_date'=>$date,'attendance'=>$attendance,'payroll'=>$payroll]);
 }
 if ($method==='POST' && in_array($route,['cast/clock-in','cast/clock-out'],true)) {
