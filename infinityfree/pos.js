@@ -16,6 +16,21 @@ function renderBill(b){
  root.dataset.sessionId=String(b.session_id);
 }
 async function loadBill(){const b=await api('sessions/'+$('billsession').value+'/bill');$('payamount').value=b.balance;$('discountsession').value=$('billsession').value;renderBill(b);return b}
+function renderSalesReport(r){
+ const root=$('salesReport');root.replaceChildren();
+ const summary=document.createElement('div');summary.className='sales-summary';
+ for(const [label,key] of [['売上合計','sales_total'],['割引合計','discount_total'],['返金合計','refund_total'],['給与合計','payroll_total'],['経費合計','expense_total']]){
+  const item=document.createElement('div');item.className='sales-metric';const name=document.createElement('span');name.textContent=label;const value=document.createElement('strong');value.textContent=yen(r.summary[key]);item.append(name,value);summary.append(item);
+ }
+ root.append(summary);
+ const wrap=document.createElement('div');wrap.className='sales-table-wrap';const table=document.createElement('table');const headers=['営業日','売上','割引','返金','現金','カード','その他','給与','経費','差額'];
+ const thead=document.createElement('thead');const hr=document.createElement('tr');
+ headers.forEach(v=>{const th=document.createElement('th');th.textContent=v;hr.append(th)});thead.append(hr);table.append(thead);
+ const tbody=document.createElement('tbody');
+ for(const row of r.rows){const tr=document.createElement('tr');const vals=[row.business_date,yen(row.sales_total),yen(row.discount_total),yen(row.refund_total),yen(row.cash_total),yen(row.card_total),yen(row.other_total),yen(row.payroll_total),yen(row.expense_total),yen(row.difference)];vals.forEach(v=>{const td=document.createElement('td');td.textContent=v;tr.append(td)});tbody.append(tr)}
+ table.append(tbody);wrap.append(table);root.append(wrap);
+ const foot=document.createElement('p');foot.className='muted';foot.textContent='日締め済み '+r.days+' 日分を集計';root.append(foot);
+}
 const key=()=>crypto.randomUUID();
 const dateNow=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 const fill=(id,rows,label)=>{const el=$(id);el.replaceChildren();for(const r of rows){const o=document.createElement('option');o.value=r.id;o.textContent=label(r);el.append(o)}};
@@ -43,7 +58,7 @@ $('clockin').onclick=()=>run(async()=>api('attendance/clock-in','POST',{cast_id:
 $('clockout').onclick=()=>run(async()=>api('attendance/clock-out','POST',{cast_id:+$('attcast').value}));
 $('confirmPayroll').onclick=()=>run(async()=>api('casts/'+$('paycast').value+'/payroll/confirm?business_date='+encodeURIComponent($('paydate').value),'POST',{adjustment:+$('payadjustment').value||0,adjustment_reason:$('payadjustmentreason').value}));
 $('reportfrom').value=dateNow();$('reportto').value=dateNow();
-$('runsalesreport').onclick=()=>run(async()=>{const from=$('reportfrom').value,to=$('reportto').value;if(!from||!to)throw Error('集計期間を指定してください');const r=await api('reports/sales?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));$('salesReport').textContent=JSON.stringify(r,null,2);return r});
+$('runsalesreport').onclick=()=>run(async()=>{const from=$('reportfrom').value,to=$('reportto').value;if(!from||!to)throw Error('集計期間を指定してください');const r=await api('reports/sales?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));renderSalesReport(r);return r});
 $('expensedate').value=dateNow();$('addexpense').onclick=()=>run(async()=>api('expenses','POST',{business_date:$('expensedate').value,category:$('expensecategory').value,amount:+$('expenseamount').value,description:$('expensedesc').value}));
 $('close').onclick=()=>run(async()=>{if(!confirm('日締めを実行しますか？未精算・未退勤・入金差異があれば停止します。'))return;return api('closings/run','POST',{business_date:$('closedate').value})});
 $('savesettings').onclick=()=>run(async()=>api('settings','PUT',{tax_enabled:$('taxenabled').checked,tax_rate:+$('taxrate').value,tax_mode:$('taxmode').value,service_enabled:$('serviceenabled').checked,service_rate:+$('servicerate').value,service_mode:$('servicemode').value,service_fixed_amount:+$('servicefixed').value,service_taxable:$('servicetaxable').checked,service_basis:$('servicebasis').value,rounding_mode:$('salesroundmode').value,work_rounding_minutes:+$('roundminutes').value,work_rounding_mode:$('roundmode').value}));
