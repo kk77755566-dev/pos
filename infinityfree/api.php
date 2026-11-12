@@ -54,6 +54,11 @@ function businessDate(PDO $db,int $storeId): string {
     if ($now->format('H:i:s') < $s['business_day_start']) $now=$now->modify('-1 day');
     return $now->format('Y-m-d');
 }
+function assertBusinessDateOpen(PDO $db,int $storeId,string $date): void {
+    $q=$db->prepare("SELECT status FROM daily_closings WHERE store_id=? AND business_date=? AND status='closed' LIMIT 1");
+    $q->execute([$storeId,$date]);
+    if($q->fetch()) respond(409,['error'=>'この営業日は日締め済みです。管理者による締め解除が必要です']);
+}
 function idempotency(array $data): string {
     $key=(string)($data['idempotency_key']??'');
     if (strlen($key)<8 || strlen($key)>100) respond(422,['error'=>'idempotency_keyは8〜100文字で指定してください']);
@@ -92,7 +97,7 @@ try {
         $q=$db->prepare("SELECT id FROM table_sessions WHERE store_id=? AND table_id=? AND status IN ('open','checkout') LIMIT 1 FOR UPDATE");
         $q->execute([$store,$table]); if ($q->fetch()) {$db->rollBack();respond(409,['error'=>'この卓は既に利用中です']);}
         $q=$db->prepare("INSERT INTO table_sessions(store_id,table_id,business_date,customer_count,started_at,status,created_by_user_id,idempotency_key) VALUES(?,?,?,?,UTC_TIMESTAMP(3),'open',?,?)");
-        $q->execute([$store,$table,businessDate($db,$store),$count,(int)$u['id'],$key]); $sid=(int)$db->lastInsertId();
+        $businessDate=businessDate($db,$store);assertBusinessDateOpen($db,$store,$businessDate);$q->execute([$store,$table,$businessDate,$count,(int)$u['id'],$key]); $sid=(int)$db->lastInsertId();
         $db->prepare("UPDATE `tables` SET status='occupied' WHERE store_id=? AND id=?")->execute([$store,$table]);
         $db->commit(); respond(201,['data'=>['session_id'=>$sid,'table_id'=>$table,'status'=>'open'],'replayed'=>false]);
     }
@@ -101,8 +106,9 @@ try {
         $sid=(int)$m[1]; $set=(int)($data['set_menu_id']??0); $key=idempotency($data);
         $db->beginTransaction();
         $old=$db->prepare('SELECT id,session_id,set_menu_id FROM session_set_items WHERE store_id=? AND idempotency_key=?');$old->execute([$store,$key]);if($existing=$old->fetch()){$db->commit();respond(200,['data'=>['session_set_item_id'=>(int)$existing['id'],'session_id'=>(int)$existing['session_id'],'set_menu_id'=>(int)$existing['set_menu_id']],'replayed'=>true]);}
-        $q=$db->prepare("SELECT id,status FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");
+        $q=$db->prepare("SELECT id,status,business_date FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");
         $q->execute([$store,$sid]); if (($s=$q->fetch())===false || $s['status']!=='open') {$db->rollBack();respond(409,['error'=>'営業中の卓ではありません']);}
+        assertBusinessDateOpen($db,$store,$s['business_date']);
         $q=$db->prepare('SELECT id,name,duration_minutes,price FROM set_menus WHERE store_id=? AND id=? AND is_active=1');
         $q->execute([$store,$set]); if (!$menu=$q->fetch()) {$db->rollBack();respond(404,['error'=>'セットが見つかりません']);}
         $now=new DateTimeImmutable('now',new DateTimeZone('UTC')); $start=$now->format('Y-m-d H:i:s.v'); $end=$now->modify('+'.(int)$menu['duration_minutes'].' minutes')->format('Y-m-d H:i:s.v');
@@ -117,8 +123,9 @@ try {
         $db->beginTransaction();
         $q=$db->prepare('SELECT id,order_number,status FROM orders WHERE store_id=? AND idempotency_key=?');
         $q->execute([$store,$key]); if ($old=$q->fetch()) {$db->commit();respond(200,['data'=>$old,'replayed'=>true]);}
-        $q=$db->prepare("SELECT id FROM table_sessions WHERE store_id=? AND id=? AND status='open' FOR UPDATE");
-        $q->execute([$store,$sid]); if (!$q->fetch()) {$db->rollBack();respond(409,['error'=>'営業中の卓ではありません']);}
+        $q=$db->prepare("SELECT id,business_date FROM table_sessions WHERE store_id=? AND id=? AND status='open' FOR UPDATE");
+        $q->execute([$store,$sid]); if (!$session=$q->fetch()) {$db->rollBack();respond(409,['error'=>'営業中の卓ではありません']);}
+        assertBusinessDateOpen($db,$store,$session['business_date']);
         $number= strtoupper(bin2hex(random_bytes(10)));
         $q=$db->prepare("INSERT INTO orders(store_id,session_id,order_number,entered_by_user_id,status,ordered_at,idempotency_key) VALUES(?,?,?,?,'confirmed',UTC_TIMESTAMP(3),?)");
         $q->execute([$store,$sid,$number,(int)$u['id'],$key]); $oid=(int)$db->lastInsertId(); $created=[];
