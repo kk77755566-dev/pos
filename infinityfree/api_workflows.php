@@ -190,13 +190,15 @@ if ($route === 'payments') {
     $q=$wfdb->prepare('SELECT id,session_id,amount,status FROM payments WHERE store_id=? AND idempotency_key=? FOR UPDATE');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['payment_id'=>(int)$old['id'],'session_id'=>(int)$old['session_id'],'amount'=>(float)$old['amount'],'status'=>$old['status'],'replayed'=>true]);}
     $q=$wfdb->prepare("SELECT id,table_id,status,business_date FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
     if(!$s||!in_array($s['status'],['open','checkout'],true)){$wfdb->rollBack();respond(409,['error'=>'会計可能な卓ではありません']);}assertBusinessDateOpen($wfdb,$store,$s['business_date']);
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
-    $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
-    $sub=$items+$sets;$basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$sub);
-    $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
-    $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);$tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-    $total=posRoundTotal($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
+    $bill=posGetSessionBill($wfdb,$store,$sid);
+    if(empty($bill['snapshot_locked'])){
+        $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
+        $snapshotJson=json_encode($cfg,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
+        $wfdb->prepare('INSERT INTO session_charge_snapshots(store_id,session_id,items_subtotal,sets_subtotal,subtotal,service_amount,tax_amount,total_amount,settings_snapshot) VALUES(?,?,?,?,?,?,?,?,?)')
+            ->execute([$store,$sid,$bill['items_subtotal'],$bill['sets_subtotal'],$bill['subtotal'],$bill['service'],$bill['tax'],$bill['total'],$snapshotJson]);
+        $bill['snapshot_locked']=true;
+    }
+    $total=(float)$bill['total'];
     $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
     if($amount>$total-$paid+0.001){$wfdb->rollBack();respond(422,['error'=>'請求残額を超える入金です']);}
     $q=$wfdb->prepare("INSERT INTO payments(store_id,session_id,payment_method,amount,status,idempotency_key,paid_at,created_by_user_id) VALUES(?,?,?,?,'completed',?,UTC_TIMESTAMP(3),?)");$q->execute([$store,$sid,$method,$amount,$key,(int)$u['id']]);$pid=(int)$wfdb->lastInsertId();$newPaid=$paid+$amount;$closed=$newPaid>=$total-0.001;
