@@ -27,7 +27,11 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 <div id="app" class="hidden">
 <section class="panel"><div class="row"><div><h2>卓管理</h2><div class="muted">卓を選択して着席・会計へ進みます。</div></div><button id="refresh" class="secondary">更新</button></div><div id="tables" class="tables"></div></section>
 <div class="two">
-<section class="panel"><h2>店舗マスター登録（オーナー・店長）</h2><div class="grid">
+<section class="panel"><h2>店舗料金・勤務設定</h2><div class="grid">
+<div><label><input id="taxenabled" type="checkbox" style="width:auto"> 消費税を有効</label><label>税率（%）</label><input id="taxrate" type="number" step="0.01" min="0" max="100"><label>税計算</label><select id="taxmode"><option value="exclusive">外税</option><option value="inclusive">内税</option></select></div>
+<div><label><input id="serviceenabled" type="checkbox" style="width:auto"> サービス料を有効</label><label>サービス料方式</label><select id="servicemode"><option value="rate">率</option><option value="fixed">固定額</option></select><label>サービス料率（%）</label><input id="servicerate" type="number" step="0.01" min="0" max="100"><label>固定額</label><input id="servicefixed" type="number" min="0"><label>対象</label><select id="servicebasis"><option value="sets_only">セットのみ</option><option value="items_only">商品だけ</option><option value="all_subtotal">全小計</option></select><label><input id="servicetaxable" type="checkbox" style="width:auto"> サービス料に課税</label></div>
+<div><label>勤務時間の丸め単位（分）</label><select id="roundminutes"><option>1</option><option>5</option><option>10</option><option>15</option><option>30</option><option>60</option></select><label>丸め方法</label><select id="roundmode"><option value="floor">切り捨て</option><option value="half_up">四捨五入</option><option value="ceil">切り上げ</option></select><button id="savesettings" style="margin-top:8px">店舗設定を保存</button></div>
+</div><div class="muted">変更は保存後の会計・勤怠計算に適用されます。過去の確定済み記録は変更しません。</div></section>\n<section class="panel"><h2>店舗マスター登録（オーナー・店長）</h2><div class="grid">
 <div><label>卓名</label><input id="newtable" placeholder="A卓"><button id="addtable" style="margin-top:6px">卓を追加</button></div>
 <div><label>キャストコード</label><input id="castcode" placeholder="C001"><label>キャスト名</label><input id="castname"><label>時給</label><input id="castwage" type="number" min="0"><button id="addcast" style="margin-top:6px">キャストを追加</button></div>
 <div><label>商品名</label><input id="prodname"><label>販売価格</label><input id="prodprice" type="number" min="0"><label>バック率（%）</label><input id="prodrate" type="number" min="0" max="100" value="0"><button id="addproduct" style="margin-top:6px">商品を追加</button></div>
@@ -55,12 +59,15 @@ async function api(path,method="GET",body=null){
 function msg(value,el="msg"){ $(el).textContent=typeof value==="string"?value:JSON.stringify(value,null,2);}
 $("loginbtn").onclick=async()=>{try{const d=await api("/api/auth/login","POST",{store_code:$("store").value,login_id:$("loginid").value,password:$("password").value});token=d.access_token;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");await loadAll();msg("ログインしました。");}catch(e){msg(e.message,"loginmsg")}};
 $("logout").onclick=()=>{token="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("logout").classList.add("hidden")};
-async function loadAll(){const [tables,products,sets,casts]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts")]);master={products,sets,casts};
+async function loadAll(){const [tables,products,sets,casts,settings]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts"),api("/api/settings")]);master={products,sets,casts};setSettings(settings);
 $("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+"
 "+t.status+(t.session_id?"
 Session #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
 fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);fill("payrollcast",casts,c=>c.cast_name);
 }
+function setSettings(s){$("taxenabled").checked=!!s.tax_enabled;$("taxrate").value=s.tax_rate;$("taxmode").value=s.tax_mode;$("serviceenabled").checked=!!s.service_enabled;$("servicemode").value=s.service_mode;$("servicerate").value=s.service_rate;$("servicefixed").value=s.service_fixed_amount;$("servicebasis").value=s.service_basis;$("servicetaxable").checked=!!s.service_taxable;$("roundminutes").value=s.work_rounding_minutes;$("roundmode").value=s.work_rounding_mode}
+$("savesettings").onclick=async()=>{try{const d=await api("/api/settings","PUT",{tax_enabled:$("taxenabled").checked,tax_rate:$("taxrate").value,tax_mode:$("taxmode").value,service_enabled:$("serviceenabled").checked,service_rate:$("servicerate").value,service_mode:$("servicemode").value,service_fixed_amount:$("servicefixed").value,service_taxable:$("servicetaxable").checked,service_basis:$("servicebasis").value,work_rounding_minutes:+$("roundminutes").value,work_rounding_mode:$("roundmode").value});msg(d)}catch(e){msg(e.message)}};
+function localDate(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
 function fill(id,arr,label){const el=$(id);el.replaceChildren();arr.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=label(x);el.append(o)})}
 $("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));
 $("addtable").onclick=async()=>{try{msg(await api("/api/tables","POST",{table_name:$("newtable").value,capacity:4}));await loadAll()}catch(e){msg(e.message)}};
@@ -74,7 +81,7 @@ $("order").onclick=async()=>{try{const selected=[...$("cast").selectedOptions].m
 $("bill").onclick=async()=>{try{const d=await api("/api/sessions/"+$("billsession").value+"/bill");$("payamount").value=d.balance;msg(d)}catch(e){msg(e.message)}};
 $("pay").onclick=async()=>{try{msg(await api("/api/payments","POST",{session_id:+$("billsession").value,payment_method:$("method").value,amount:$("payamount").value,idempotency_key:key()}));await loadAll()}catch(e){msg(e.message)}};
 $("confirmPayroll").onclick=async()=>{try{const date=$("payrolldate").value;const id=$("payrollcast").value;msg(await api("/api/casts/"+id+"/payroll/confirm?business_date="+encodeURIComponent(date),"POST"))}catch(e){msg(e.message)}};
-$("payrolldate").value=new Date().toLocaleDateString("en-CA");
+$("payrolldate").value=localDate();
 $("close").onclick=async()=>{if(!confirm("この営業日の締め処理を実行しますか？"))return;try{msg(await api("/api/closings/run","POST",{business_date:$("closedate").value}))}catch(e){msg(e.message)}};
 $("closedate").value=new Date().toLocaleDateString("en-CA");
 </script></body></html>
