@@ -6,6 +6,8 @@ Business writes are added only after database integration tests are available.
 from __future__ import annotations
 
 import os
+import uuid
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -15,7 +17,7 @@ import pymysql
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, condecimal
 
 load_dotenv()
 
@@ -185,5 +187,172 @@ def list_tables(user: dict[str, Any] = Depends(current_user)):
                 (user["store_id"],),
             )
             return cur.fetchall()
+    finally:
+        conn.close()
+
+
+class BackAllocationInput(BaseModel):
+    cast_id: int = Field(gt=0)
+    allocation_rate: Decimal = Field(ge=0, le=100)
+
+
+class OrderItemInput(BaseModel):
+    product_id: int = Field(gt=0)
+    quantity: Decimal = Field(gt=0, le=9999)
+    allocations: list[BackAllocationInput] = Field(default_factory=list)
+
+
+class OrderCreateRequest(BaseModel):
+    session_id: int = Field(gt=0)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+    items: list[OrderItemInput] = Field(min_length=1, max_length=100)
+
+
+def money(value: Decimal) -> Decimal:
+    return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+@app.post("/api/orders")
+def create_order(body: OrderCreateRequest, user: dict[str, Any] = Depends(current_user)):
+    """Create an order and its per-item cast back allocations atomically."""
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+
+    store_id = user["store_id"]
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            # Idempotent retry: return the previously committed order.
+            cur.execute(
+                "SELECT id, order_number, status FROM orders WHERE store_id=%s AND idempotency_key=%s",
+                (store_id, body.idempotency_key),
+            )
+            existing = cur.fetchone()
+            if existing:
+                conn.commit()
+                return {"order_id": existing["id"], "order_number": existing["order_number"],
+                        "status": existing["status"], "replayed": True}
+
+            cur.execute(
+                "SELECT id, status FROM table_sessions WHERE store_id=%s AND id=%s FOR UPDATE",
+                (store_id, body.session_id),
+            )
+            session = cur.fetchone()
+            if not session or session["status"] != "open":
+                raise HTTPException(status_code=409, detail="Table session is not open")
+
+            order_number = uuid.uuid4().hex[:20].upper()
+            cur.execute(
+                """INSERT INTO orders
+                   (store_id, session_id, order_number, entered_by_user_id,
+                    status, ordered_at, idempotency_key)
+                   VALUES (%s,%s,%s,%s,'confirmed',UTC_TIMESTAMP(3),%s)""",
+                (store_id, body.session_id, order_number, user["user_id"], body.idempotency_key),
+            )
+            order_id = cur.lastrowid
+            created_items = []
+
+            for item in body.items:
+                cur.execute(
+                    """SELECT id, product_name, selling_price, back_rate, back_type
+                         FROM products
+                        WHERE store_id=%s AND id=%s AND is_active=1
+                        FOR UPDATE""",
+                    (store_id, item.product_id),
+                )
+                product = cur.fetchone()
+                if not product:
+                    raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
+
+                quantity = Decimal(str(item.quantity))
+                unit_price = Decimal(str(product["selling_price"]))
+                back_rate = Decimal(str(product["back_rate"]))
+                back_type = product["back_type"]
+                gross = unit_price * quantity
+                if back_type == "percentage":
+                    back_total = money(gross * back_rate / Decimal("100"))
+                elif back_type == "fixed_per_unit":
+                    back_total = money(back_rate * quantity)
+                else:
+                    back_total = Decimal("0.00")
+
+                allocation_rate_total = sum(
+                    (Decimal(str(a.allocation_rate)) for a in item.allocations),
+                    Decimal("0"),
+                )
+                if allocation_rate_total > Decimal("100"):
+                    raise HTTPException(status_code=422, detail="Back allocation rates must total 100% or less")
+
+                cur.execute(
+                    """INSERT INTO order_items
+                       (store_id, order_id, product_id, product_name_snapshot,
+                        quantity, unit_price_snapshot, back_rate_snapshot,
+                        back_type_snapshot, back_amount_total, status)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'active')""",
+                    (store_id, order_id, product["id"], product["product_name"],
+                     str(quantity), str(unit_price), str(back_rate), back_type, str(back_total)),
+                )
+                item_id = cur.lastrowid
+                allocations_created = []
+
+                # Allocation rates are shares of the item's calculated back pool.
+                # The final recipient receives the remaining cents to avoid rounding drift.
+                remaining = back_total
+                for index, allocation in enumerate(item.allocations):
+                    cur.execute(
+                        "SELECT id FROM casts WHERE store_id=%s AND id=%s AND is_active=1",
+                        (store_id, allocation.cast_id),
+                    )
+                    if not cur.fetchone():
+                        raise HTTPException(status_code=404, detail=f"Cast {allocation.cast_id} not found")
+
+                    rate = Decimal(str(allocation.allocation_rate))
+                    if index == len(item.allocations) - 1:
+                        allocated_amount = min(remaining, money(back_total * rate / Decimal("100")))
+                        if allocation_rate_total == Decimal("100"):
+                            allocated_amount = remaining
+                    else:
+                        allocated_amount = min(remaining, money(back_total * rate / Decimal("100")))
+                    remaining -= allocated_amount
+
+                    cur.execute(
+                        """INSERT INTO order_item_back_allocations
+                           (store_id, order_item_id, cast_id, allocation_rate, back_amount, status)
+                           VALUES (%s,%s,%s,%s,%s,'active')""",
+                        (store_id, item_id, allocation.cast_id, str(rate), str(allocated_amount)),
+                    )
+                    allocations_created.append({
+                        "cast_id": allocation.cast_id,
+                        "allocation_rate": str(rate),
+                        "back_amount": str(allocated_amount),
+                    })
+
+                created_items.append({
+                    "order_item_id": item_id,
+                    "product_name": product["product_name"],
+                    "quantity": str(quantity),
+                    "unit_price": str(unit_price),
+                    "back_amount_total": str(back_total),
+                    "allocations": allocations_created,
+                })
+
+            conn.commit()
+            return {
+                "order_id": order_id,
+                "order_number": order_number,
+                "status": "confirmed",
+                "replayed": False,
+                "items": created_items,
+            }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Order could not be saved; retry with the same idempotency key") from None
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
