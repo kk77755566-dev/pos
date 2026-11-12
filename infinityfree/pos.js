@@ -14,7 +14,7 @@ async function reload(){
  const [tables,products,sets,casts,settings]=await Promise.all(['tables','products','sets','casts','settings'].map(r=>api(r)));
  data={tables:tables.data,products:products.data,sets:sets.data,casts:casts.data};
  fill('product',data.products,p=>p.product_name+' ¥'+p.selling_price);fill('setmenu',data.sets,s=>s.name+' / '+s.duration_minutes+'分 ¥'+s.price);
- fill('cast',data.casts,c=>c.cast_name);fill('paycast',data.casts,c=>c.cast_name);
+ fill('cast',data.casts,c=>c.cast_name);fill('attcast',data.casts,c=>c.cast_name);fill('paycast',data.casts,c=>c.cast_name);
  fill('editproduct',data.products,p=>p.product_name);fill('editset',data.sets,s=>s.name);fill('editcast',data.casts,c=>c.cast_name);fill('edittable',data.tables,t=>t.table_name);
  $('tables').replaceChildren();
  for(const t of data.tables){const b=document.createElement('button');b.className='table '+t.status;b.textContent=t.table_name+'\n'+t.status+(t.session_id?'\n#'+t.session_id:'');b.onclick=()=>{if(t.session_id){$('session').value=t.session_id;$('ordersession').value=t.session_id;$('billsession').value=t.session_id;say(t.table_name+' / セッション '+t.session_id)}else{$('tableid').value=t.id}};$('tables').append(b)}
