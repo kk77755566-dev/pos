@@ -53,6 +53,24 @@ TOKEN = request("api.php?r=csrf")["csrf"]
 for route in ("tables", "products", "sets", "casts", "settings"):
     assert "data" in api(route) or route == "settings"
 
+api("settings", "PUT", {
+    "tax_enabled": True, "tax_rate": 10, "tax_mode": "exclusive",
+    "service_enabled": False, "service_rate": 0, "service_mode": "rate",
+    "service_fixed_amount": 0, "service_taxable": True, "service_basis": "all_subtotal",
+    "work_rounding_minutes": 15, "work_rounding_mode": "floor"
+})
+new_table = api("tables", "POST", {"table_name": "B卓", "capacity": 3}, 201)["id"]
+api(f"tables/{new_table}", "PUT", {"table_name": "B卓改", "capacity": 3, "is_active": True})
+api(f"tables/{new_table}", "PUT", {"table_name": "B卓改", "capacity": 3, "is_active": False})
+new_product = api("products", "POST", {"product_name": "テスト商品", "selling_price": 300, "back_rate": 10, "back_type": "percentage"}, 201)["id"]
+api(f"products/{new_product}", "PUT", {"product_name": "テスト商品改", "selling_price": 350, "back_rate": 12, "back_type": "percentage", "is_active": True})
+api(f"products/{new_product}", "PUT", {"product_name": "テスト商品改", "selling_price": 350, "back_rate": 12, "back_type": "percentage", "is_active": False})
+new_set = api("sets", "POST", {"name": "テスト延長", "duration_minutes": 30, "price": 250, "is_extension": True}, 201)["id"]
+api(f"sets/{new_set}", "PUT", {"name": "テスト延長改", "duration_minutes": 30, "price": 300, "is_extension": True, "is_active": True})
+api(f"sets/{new_set}", "PUT", {"name": "テスト延長改", "duration_minutes": 30, "price": 300, "is_extension": True, "is_active": False})
+new_cast = api("casts", "POST", {"cast_code": "C003", "cast_name": "キャストC", "hourly_wage": 1400}, 201)["id"]
+api(f"casts/{new_cast}", "PUT", {"cast_code": "C003", "cast_name": "キャストC改", "hourly_wage": 1500, "is_active": True})
+
 session_key = "ci-session-unique-001"
 opened = api("sessions", "POST", {"table_id": 1, "customer_count": 2, "idempotency_key": session_key}, 201)
 session_id = opened["data"]["session_id"]
