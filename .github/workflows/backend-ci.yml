@@ -50,7 +50,6 @@ jobs:
           php -l ../infinityfree/index.php
           php -l ../infinityfree/api.php
           php -l ../infinityfree/api_workflows.php
-          php -l ../infinityfree/pos.js
           node --check ../infinityfree/pos.js
           php -l ../infinityfree/config.example.php
           php -l ../infinityfree/bootstrap_owner.php
