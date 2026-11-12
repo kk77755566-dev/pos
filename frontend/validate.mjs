@@ -11,7 +11,7 @@ const script = html.slice(start + 8, end);
 new vm.Script(script, { filename: "frontend/index.html:inline-script" });
 
 const ids = new Set([...html.matchAll(/id="([^"]+)"/g)].map(match => match[1]));
-const required = ["apiurl","loginbtn","store","loginid","password","tables","tableid","people","seat","sessionid","setmenu","addset","ordersession","product","quantity","cast","order","billsession","bill","payamount","method","pay","payrolldate","payrollcast","confirmPayroll","closedate","close","addtable","addcast","addproduct","addmenu","taxenabled","taxrate","taxmode","serviceenabled","servicemode","servicerate","servicefixed","servicebasis","servicetaxable","roundminutes","roundmode","savesettings","paymentid","refundamount","refundreason","refund"];
+const required = ["apiurl","loginbtn","store","loginid","password","tables","tableid","people","seat","sessionid","setmenu","addset","ordersession","product","quantity","cast","order","billsession","bill","payamount","method","pay","payrolldate","payrollcast","confirmPayroll","closedate","close","addtable","addcast","addproduct","addmenu","taxenabled","taxrate","taxmode","serviceenabled","servicemode","servicerate","servicefixed","servicebasis","servicetaxable","roundminutes","roundmode","savesettings","paymentid","refundamount","refundreason","refund","editproduct","loadproduct","saveproduct","disableproduct","editmenu","loadmenu","savemenu","disablemenu","editcast","loadcast","savecast","disablecast","edittable","loadtable","savetable","disabletable"];
 const missing = required.filter(id => !ids.has(id));
 if (missing.length) throw new Error("Missing frontend element IDs: " + missing.join(", "));
 console.log("Frontend JavaScript syntax and required element IDs: OK");
