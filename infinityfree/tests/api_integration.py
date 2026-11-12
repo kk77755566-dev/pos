@@ -189,6 +189,8 @@ cast_home = cast_request("api.php?r=cast/me")
 assert cast_home["cast_id"] == new_cast
 assert cast_home["attendance"] and cast_home["attendance"][0]["clock_out_at"]
 assert cast_home["payroll"] and cast_home["payroll"][0]["status"] == "confirmed"
+cast_request("api.php?r=settings", expected=403)
+cast_request(f"api.php?r=sessions/{session_id}/bill", expected=403)
 
 api("expenses", "POST", {"business_date": business_date, "category": "CI", "amount": 200, "description": "test"}, 201)
 closing = api("closings/run", "POST", {"business_date": business_date}, 200)

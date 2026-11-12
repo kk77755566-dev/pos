@@ -75,10 +75,12 @@ if ($method === 'GET' && $route === 'closings') {
     respond(200,['data'=>$c]);
 }
 if ($method === 'GET' && $route === 'settings') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'店舗設定の閲覧権限がありません']);
     $q=$wfdb->prepare('SELECT tax_enabled,tax_rate,tax_mode,service_enabled,service_rate,service_mode,service_fixed_amount,service_taxable,service_basis,rounding_mode,work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');
     $q->execute([$store]); respond(200,['data'=>$q->fetch() ?: []]);
 }
 if ($method === 'GET' && preg_match('#^sessions/([0-9]+)/bill$#',$route,$m)) {
+    if(!in_array($u['role_code'],['owner','manager','staff'],true))respond(403,['error'=>'会計情報の閲覧権限がありません']);
     $sid=(int)$m[1];
     $q=$wfdb->prepare('SELECT id,status FROM table_sessions WHERE store_id=? AND id=?'); $q->execute([$store,$sid]); $session=$q->fetch();
     if(!$session) respond(404,['error'=>'卓が見つかりません']);
