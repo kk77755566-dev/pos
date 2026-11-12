@@ -49,6 +49,7 @@ jobs:
         run: |
           php -l ../infinityfree/index.php
           php -l ../infinityfree/config.example.php
+          php -l ../infinityfree/bootstrap_owner.php
       - name: Validate InfinityFree schema on MySQL 8
         working-directory: .
         run: |
