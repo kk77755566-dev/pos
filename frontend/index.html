@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171323"><title>Girls Bar POS</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#211d2a;background:#f5f3f8}
+*{box-sizing:border-box}body{margin:0}header{background:#211a30;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+main{max-width:1100px;margin:auto;padding:16px}.panel{background:white;border:1px solid #e7e1ee;border-radius:14px;padding:16px;margin:0 0 14px;box-shadow:0 2px 8px #2113230a}
+h1{font-size:18px;margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:#777181;font-size:13px}
+input,select,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #d7d0e0;min-width:0;width:100%}
+button{background:#5b3c7a;color:white;border:0;font-weight:650;cursor:pointer}button.secondary{background:#eee9f3;color:#342640}button:disabled{opacity:.45}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.tables{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:10px}
+.table{background:#f2edf7;color:#2c2137;border:1px solid #ded3e9;min-height:90px}.table.occupied{background:#fcebdc;border-color:#f1c99e}.table.checkout{background:#e5efff;border-color:#b7cfee}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto;flex:1;min-width:130px}.hidden{display:none!important}.status{padding:10px;border-radius:8px;background:#f1edf5;white-space:pre-wrap;font-size:13px;margin-top:10px}.danger{color:#a12b35}
+label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
+@media(min-width:720px){.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+</style></head>
+<body>
+<header><h1>Girls Bar POS</h1><button id="logout" class="secondary hidden" style="width:auto">ログアウト</button></header>
+<main>
+<section id="login" class="panel"><h2>ログイン</h2><div class="grid">
+<div><label>店舗コード</label><input id="store" autocomplete="organization" placeholder="STORE001"></div>
+<div><label>ログインID</label><input id="loginid" autocomplete="username"></div>
+<div><label>パスワード</label><input id="password" type="password" autocomplete="current-password"></div>
+</div><button id="loginbtn" style="margin-top:12px">ログイン</button><div id="loginmsg" class="status">APIサーバーに接続してログインしてください。</div></section>
+<div id="app" class="hidden">
+<section class="panel"><div class="row"><div><h2>卓管理</h2><div class="muted">卓を選択して着席・会計へ進みます。</div></div><button id="refresh" class="secondary">更新</button></div><div id="tables" class="tables"></div></section>
+<div class="two">
+<section class="panel"><h2>着席登録</h2><div class="grid"><div><label>卓ID</label><input id="tableid" type="number" min="1"></div><div><label>人数</label><input id="people" type="number" min="1" value="1"></div></div><button id="seat" style="margin-top:10px">着席開始</button></section>
+<section class="panel"><h2>セット・延長</h2><label>営業セッションID</label><input id="sessionid" type="number" min="1"><label style="margin-top:8px">セットメニュー</label><select id="setmenu"></select><button id="addset" style="margin-top:10px">セットを登録</button></section>
+</div>
+<section class="panel"><h2>商品注文</h2><div class="grid"><div><label>営業セッションID</label><input id="ordersession" type="number" min="1"></div><div><label>商品</label><select id="product"></select></div><div><label>数量</label><input id="quantity" type="number" min="0.001" step="0.001" value="1"></div><div><label>バック配分先</label><select id="cast" multiple size="3"></select><div class="muted">複数選択時は均等配分（初期UI）</div></div></div><button id="order" style="margin-top:10px">注文登録</button></section>
+<section class="panel"><h2>会計</h2><div class="grid"><div><label>営業セッションID</label><input id="billsession" type="number" min="1"></div><div><label>決済方法</label><select id="method"><option value="cash">現金</option><option value="credit_card">クレジットカード</option><option value="qr">QR決済</option><option value="electronic_money">電子マネー</option><option value="transfer">振込</option><option value="other">その他</option></select></div><div><label>支払金額</label><input id="payamount" type="number" min="0.01" step="0.01"></div></div><div class="actions" style="margin-top:10px"><button id="bill" class="secondary">会計金額確認</button><button id="pay">入金登録</button></div></section>
+<section class="panel"><h2>日締め</h2><div class="row"><input id="closedate" type="date"><button id="close" style="max-width:180px">日締め実行</button></div><div class="muted">未退勤・未精算卓・入金不一致があれば確定を止めます。</div></section>
+<div id="msg" class="status">ログイン後に操作できます。</div>
+</div></main>
+<script>
+const $=id=>document.getElementById(id);let token="",master={products:[],sets:[],casts:[]};
+const apiBase=localStorage.getItem("girlsbar_api")||location.origin;
+function key(){return crypto.randomUUID()}
+async function api(path,method="GET",body=null){
+ const res=await fetch(apiBase+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const data=await res.json().catch(()=>({detail:res.statusText}));if(!res.ok)throw Error(data.detail||"API error "+res.status);return data;
+}
+function msg(value,el="msg"){ $(el).textContent=typeof value==="string"?value:JSON.stringify(value,null,2);}
+$("loginbtn").onclick=async()=>{try{const d=await api("/api/auth/login","POST",{store_code:$("store").value,login_id:$("loginid").value,password:$("password").value});token=d.access_token;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");await loadAll();msg("ログインしました。");}catch(e){msg(e.message,"loginmsg")}};
+$("logout").onclick=()=>{token="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("logout").classList.add("hidden")};
+async function loadAll(){const [tables,products,sets,casts]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts")]);master={products,sets,casts};
+$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+"\n"+t.status+(t.session_id?"\nSession #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
+fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);
+}
+function fill(id,arr,label){const el=$(id);el.replaceChildren();arr.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=label(x);el.append(o)})}
+$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));
+$("seat").onclick=async()=>{try{const d=await api("/api/sessions","POST",{table_id:+$("tableid").value,customer_count:+$("people").value,idempotency_key:key()});["sessionid","ordersession","billsession"].forEach(id=>$(id).value=d.session_id);msg(d);await loadAll()}catch(e){msg(e.message)}};
+$("addset").onclick=async()=>{try{msg(await api("/api/sessions/"+$("sessionid").value+"/sets","POST",{set_menu_id:+$("setmenu").value}))}catch(e){msg(e.message)}};
+$("order").onclick=async()=>{try{const selected=[...$("cast").selectedOptions].map(o=>+o.value);const allocations=selected.map(id=>({cast_id:id,allocation_rate:100/Math.max(selected.length,1)}));const d=await api("/api/orders","POST",{session_id:+$("ordersession").value,idempotency_key:key(),items:[{product_id:+$("product").value,quantity:$("quantity").value,allocations}]});msg(d)}catch(e){msg(e.message)}};
+$("bill").onclick=async()=>{try{const d=await api("/api/sessions/"+$("billsession").value+"/bill");$("payamount").value=d.balance;msg(d)}catch(e){msg(e.message)}};
+$("pay").onclick=async()=>{try{msg(await api("/api/payments","POST",{session_id:+$("billsession").value,payment_method:$("method").value,amount:$("payamount").value,idempotency_key:key()}));await loadAll()}catch(e){msg(e.message)}};
+$("close").onclick=async()=>{if(!confirm("この営業日の締め処理を実行しますか？"))return;try{msg(await api("/api/closings/run","POST",{business_date:$("closedate").value}))}catch(e){msg(e.message)}};
+$("closedate").value=new Date().toLocaleDateString("en-CA");
+</script></body></html>
