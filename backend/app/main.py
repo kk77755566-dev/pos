@@ -370,6 +370,7 @@ def create_order(body: OrderCreateRequest, user: dict[str, Any] = Depends(curren
 class SessionCreateRequest(BaseModel):
     table_id: int = Field(gt=0)
     customer_count: int = Field(default=1, ge=1, le=100)
+    started_at: datetime | None = None
     idempotency_key: str = Field(min_length=8, max_length=100)
 
 
