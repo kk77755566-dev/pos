@@ -58,6 +58,34 @@ jobs:
         run: |
           mysql -h127.0.0.1 -uroot -prootpass -e "CREATE DATABASE girlsbar_pos_infinityfree CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
           mysql -h127.0.0.1 -uroot -prootpass girlsbar_pos_infinityfree < infinityfree/database/schema.sql
+      - name: Run InfinityFree PHP POS API integration
+        working-directory: .
+        env:
+          DB_HOST: 127.0.0.1
+          DB_USER: root
+          DB_PASSWORD: rootpass
+          POS_TEST_DB_NAME: girlsbar_pos_infinityfree
+        run: |
+          cat > infinityfree/config.php <<'PHP'
+          <?php
+          return [
+            'db_host' => getenv('DB_HOST'),
+            'db_name' => getenv('POS_TEST_DB_NAME'),
+            'db_user' => getenv('DB_USER'),
+            'db_password' => getenv('DB_PASSWORD'),
+            'app_secret' => str_repeat('c', 64),
+            'timezone' => 'Asia/Tokyo',
+          ];
+          PHP
+          php infinityfree/tests/seed_ci.php
+          php -S 127.0.0.1:8765 -t infinityfree > /tmp/girlsbar-pos-php.log 2>&1 &
+          PHP_PID=$!
+          trap 'kill "$PHP_PID" 2>/dev/null || true; rm -f infinityfree/config.php' EXIT
+          for i in $(seq 1 30); do
+            if curl -fsS 'http://127.0.0.1:8765/api.php?r=csrf' >/dev/null; then break; fi
+            sleep 1
+          done
+          python3 infinityfree/tests/api_integration.py
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
