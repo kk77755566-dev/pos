@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+!.env.bootstrap.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+.DS_Store
