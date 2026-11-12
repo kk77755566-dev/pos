@@ -10,6 +10,7 @@
 - `backend/tests/`: 計算単体テストとMySQL結合テスト
 - `frontend/index.html`: iPad・スマートフォン・PC向け操作画面
 - `frontend/validate.mjs`: フロントエンド構文・DOM要素検査
+- `Dockerfile` / `.dockerignore`: Cloud Run向けAPIコンテナ
 - `docs/`: 要件・画面/API仕様・セットアップ手順
 
 ## 実装済みの主な機能
@@ -32,11 +33,11 @@
 - 日締めは集計後に整合性チェックを行い、問題がある場合は確定しない
 
 ## 開発・検証
-開発ブランチは `feature/girlsbar-pos-foundation` です。GitHub ActionsではPython構文、フロントエンドJavaScript、MySQL 8スキーマ適用、初期店舗作成、API結合テストを検証します。
+開発ブランチは `feature/girlsbar-pos-foundation` です。GitHub ActionsではPython構文、フロントエンドJavaScript、MySQL 8スキーマ適用、初期店舗作成、API結合テスト、Dockerイメージビルドを検証します。
 
 ## 本番利用前の必須確認
 - 日本の最低賃金、深夜割増、時間外割増、法定休憩、税・源泉徴収などの法令対応は未認証です。給与確定APIは現時点では暫定計算です。
 - 実店舗のDB・ネットワーク・複数端末での受入試験が必要です。
 - 決済端末・カード会社への返金実行はPOS内の返金台帳登録とは別作業です。実際の返金操作・照合手順を店舗運用に合わせて確認してください。
-- 本ブランチは開発用です。mainへのマージ・本番公開はしていません。
+- 本ブランチは開発用です。mainへのマージ・本番公開はしていません。Cloud Run用コンテナと手順書は追加済みですが、クラウド環境へのデプロイ・DB作成・秘密情報設定は未実施です。
 - 既存DBへ適用する場合はバックアップとマイグレーションを用意してください。schema.sqlは新規DB向けです。
