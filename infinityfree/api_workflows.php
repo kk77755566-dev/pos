@@ -167,9 +167,10 @@ if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
 if ($route === 'payments') {
     $sid=(int)($d['session_id']??0);$amount=round((float)($d['amount']??0),2);$method=(string)($d['payment_method']??'');$key=idempotency($d);
     if($sid<1||$amount<=0||!in_array($method,['cash','credit_card','qr','electronic_money','transfer','other'],true))respond(422,['error'=>'決済情報が不正です']);
-    $wfdb->beginTransaction();$q=$wfdb->prepare("SELECT id,table_id,status,business_date FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
+    $wfdb->beginTransaction();
+    $q=$wfdb->prepare('SELECT id,session_id,amount,status FROM payments WHERE store_id=? AND idempotency_key=? FOR UPDATE');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['payment_id'=>(int)$old['id'],'session_id'=>(int)$old['session_id'],'amount'=>(float)$old['amount'],'status'=>$old['status'],'replayed'=>true]);}
+    $q=$wfdb->prepare("SELECT id,table_id,status,business_date FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
     if(!$s||!in_array($s['status'],['open','checkout'],true)){$wfdb->rollBack();respond(409,['error'=>'会計可能な卓ではありません']);}assertBusinessDateOpen($wfdb,$store,$s['business_date']);
-    $q=$wfdb->prepare('SELECT id FROM payments WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['payment_id'=>(int)$old['id'],'replayed'=>true]);}
     $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
     $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
