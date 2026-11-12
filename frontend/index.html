@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#171323"><title>Girls Bar POS</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#211d2a;background:#f5f3f8}
+*{box-sizing:border-box}body{margin:0}header{background:#211a30;color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+main{max-width:1100px;margin:auto;padding:16px}.panel{background:white;border:1px solid #e7e1ee;border-radius:14px;padding:16px;margin:0 0 14px;box-shadow:0 2px 8px #2113230a}
+h1{font-size:18px;margin:0}h2{font-size:17px;margin:0 0 12px}.muted{color:#777181;font-size:13px}
+input,select,button{font:inherit;border-radius:9px;padding:11px;border:1px solid #d7d0e0;min-width:0;width:100%}
+button{background:#5b3c7a;color:white;border:0;font-weight:650;cursor:pointer}button.secondary{background:#eee9f3;color:#342640}button:disabled{opacity:.45}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px}.row{display:flex;gap:8px;align-items:center}.row>*{flex:1}.tables{display:grid;grid-template-columns:repeat(auto-fill,minmax(125px,1fr));gap:10px}
+.table{background:#f2edf7;color:#2c2137;border:1px solid #ded3e9;min-height:90px}.table.occupied{background:#fcebdc;border-color:#f1c99e}.table.checkout{background:#e5efff;border-color:#b7cfee}
+.actions{display:flex;gap:8px;flex-wrap:wrap}.actions button{width:auto;flex:1;min-width:130px}.hidden{display:none!important}.status{padding:10px;border-radius:8px;background:#f1edf5;white-space:pre-wrap;font-size:13px;margin-top:10px}.danger{color:#a12b35}
+label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
+@media(min-width:720px){.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}}
+</style></head>
+<body>
+<header><h1>Girls Bar POS</h1><button id="logout" class="secondary hidden" style="width:auto">ログアウト</button></header>
+<main>
+<section id="login" class="panel"><h2>ログイン</h2><div class="grid">
+<div><label>APIサーバーURL</label><input id="apiurl" placeholder="https://your-api.example.com"></div><div><label>店舗コード</label><input id="store" autocomplete="organization" placeholder="STORE001"></div>
+<div><label>ログインID</label><input id="loginid" autocomplete="username"></div>
+<div><label>パスワード</label><input id="password" type="password" autocomplete="current-password"></div>
+</div><button id="loginbtn" style="margin-top:12px">ログイン</button><div id="loginmsg" class="status">APIサーバーに接続してログインしてください。</div></section>
+<div id="app" class="hidden">
+<section class="panel"><div class="row"><div><h2>卓管理</h2><div class="muted">卓を選択して着席・会計へ進みます。</div></div><button id="refresh" class="secondary">更新</button></div><div id="tables" class="tables"></div></section>
+<div class="two">
+<section class="panel"><h2>マスター編集・利用停止</h2><div class="grid">
+<div><label>商品</label><select id="editproduct"></select><button id="loadproduct" class="secondary">商品を読み込む</button><button id="saveproduct">商品を更新</button><button id="disableproduct" class="secondary">商品を利用停止</button></div>
+<div><label>セットメニュー</label><select id="editmenu"></select><button id="loadmenu" class="secondary">セットを読み込む</button><button id="savemenu">セットを更新</button><button id="disablemenu" class="secondary">セットを利用停止</button></div>
+<div><label>キャスト</label><select id="editcast"></select><button id="loadcast" class="secondary">キャストを読み込む</button><button id="savecast">キャストを更新</button><button id="disablecast" class="secondary">キャストを利用停止</button></div>
+<div><label>卓</label><select id="edittable"></select><button id="loadtable" class="secondary">卓を読み込む</button><button id="savetable">卓を更新</button><button id="disabletable" class="secondary">卓を利用停止</button></div>
+</div><div class="muted">利用停止は過去の注文・会計履歴を削除せず、新規選択対象から外します。</div></section>\n<section class="panel"><h2>店舗料金・勤務設定</h2><div class="grid">
+<div><label><input id="taxenabled" type="checkbox" style="width:auto"> 消費税を有効</label><label>税率（%）</label><input id="taxrate" type="number" step="0.01" min="0" max="100"><label>税計算</label><select id="taxmode"><option value="exclusive">外税</option><option value="inclusive">内税</option></select></div>
+<div><label><input id="serviceenabled" type="checkbox" style="width:auto"> サービス料を有効</label><label>サービス料方式</label><select id="servicemode"><option value="rate">率</option><option value="fixed">固定額</option></select><label>サービス料率（%）</label><input id="servicerate" type="number" step="0.01" min="0" max="100"><label>固定額</label><input id="servicefixed" type="number" min="0"><label>対象</label><select id="servicebasis"><option value="sets_only">セットのみ</option><option value="items_only">商品だけ</option><option value="all_subtotal">全小計</option></select><label><input id="servicetaxable" type="checkbox" style="width:auto"> サービス料に課税</label></div>
+<div><label>勤務時間の丸め単位（分）</label><select id="roundminutes"><option>1</option><option>5</option><option>10</option><option>15</option><option>30</option><option>60</option></select><label>丸め方法</label><select id="roundmode"><option value="floor">切り捨て</option><option value="half_up">四捨五入</option><option value="ceil">切り上げ</option></select><button id="savesettings" style="margin-top:8px">店舗設定を保存</button></div>
+</div><div class="muted">変更は保存後の会計・勤怠計算に適用されます。過去の確定済み記録は変更しません。</div></section>\n<section class="panel"><h2>店舗マスター登録（オーナー・店長）</h2><div class="grid">
+<div><label>卓名</label><input id="newtable" placeholder="A卓"><button id="addtable" style="margin-top:6px">卓を追加</button></div>
+<div><label>キャストコード</label><input id="castcode" placeholder="C001"><label>キャスト名</label><input id="castname"><label>時給</label><input id="castwage" type="number" min="0"><button id="addcast" style="margin-top:6px">キャストを追加</button></div>
+<div><label>商品名</label><input id="prodname"><label>販売価格</label><input id="prodprice" type="number" min="0"><label>バック率（%）</label><input id="prodrate" type="number" min="0" max="100" value="0"><button id="addproduct" style="margin-top:6px">商品を追加</button></div>
+<div><label>セット名</label><input id="setname"><label>時間（分）</label><input id="setminutes" type="number" min="1" value="60"><label>料金</label><input id="setprice" type="number" min="0"><button id="addmenu" style="margin-top:6px">セットを追加</button></div>
+</div></section>
+<section class="panel"><h2>着席登録</h2><div class="grid"><div><label>卓ID</label><input id="tableid" type="number" min="1"></div><div><label>人数</label><input id="people" type="number" min="1" value="1"></div></div><button id="seat" style="margin-top:10px">着席開始</button></section>
+<section class="panel"><h2>セット・延長</h2><label>営業セッションID</label><input id="sessionid" type="number" min="1"><label style="margin-top:8px">セットメニュー</label><select id="setmenu"></select><button id="addset" style="margin-top:10px">セットを登録</button></section>
+</div>
+<section class="panel"><h2>商品注文</h2><div class="grid"><div><label>営業セッションID</label><input id="ordersession" type="number" min="1"></div><div><label>商品</label><select id="product"></select></div><div><label>数量</label><input id="quantity" type="number" min="0.001" step="0.001" value="1"></div><div><label>バック配分先</label><select id="cast" multiple size="3"></select><div class="muted">複数選択時は均等配分（初期UI）</div></div></div><button id="order" style="margin-top:10px">注文登録</button></section>
+<section class="panel"><h2>会計</h2><div class="grid"><div><label>営業セッションID</label><input id="billsession" type="number" min="1"></div><div><label>決済方法</label><select id="method"><option value="cash">現金</option><option value="credit_card">クレジットカード</option><option value="qr">QR決済</option><option value="electronic_money">電子マネー</option><option value="transfer">振込</option><option value="other">その他</option></select></div><div><label>支払金額</label><input id="payamount" type="number" min="0.01" step="0.01"></div></div><div class="actions" style="margin-top:10px"><button id="bill" class="secondary">会計金額確認</button><button id="pay">入金登録</button></div></section>
+<section class="panel"><h2>返金処理（オーナー・店長）</h2><div class="grid"><div><label>決済ID</label><input id="paymentid" type="number" min="1"><label>返金額</label><input id="refundamount" type="number" min="0.01" step="0.01"></div><div><label>返金理由</label><input id="refundreason" maxlength="500" placeholder="返金理由を入力"><button id="refund" style="margin-top:8px">返金を登録</button></div></div><div class="muted">返金は元の決済に紐づけて記録し、営業日別の返金額に計上します。</div></section>\n<section class="panel"><h2>給与確定</h2><div class="grid"><div><label>対象日</label><input id="payrolldate" type="date"></div><div><label>キャスト</label><select id="payrollcast"></select></div></div><button id="confirmPayroll" style="margin-top:10px">給与を計算・確定</button><div class="muted">退勤済みの勤務時間と商品バックを集計します。割増賃金等の法令確認は別途必要です。</div></section>
+<section class="panel"><h2>日締め</h2><div class="row"><input id="closedate" type="date"><button id="close" style="max-width:180px">日締め実行</button></div><div class="muted">未退勤・未精算卓・入金不一致があれば確定を止めます。</div></section>
+<div id="msg" class="status">ログイン後に操作できます。</div>
+</div></main>
+<script>
+const $=id=>document.getElementById(id);let token="",master={products:[],sets:[],casts:[]};
+let apiBase=localStorage.getItem("girlsbar_api")||location.origin;
+$("apiurl").value=apiBase;
+$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
+function key(){return crypto.randomUUID()}
+async function api(path,method="GET",body=null){
+ const res=await fetch(apiBase+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
+ const data=await res.json().catch(()=>({detail:res.statusText}));if(!res.ok)throw Error(data.detail||"API error "+res.status);return data;
+}
+function msg(value,el="msg"){ $(el).textContent=typeof value==="string"?value:JSON.stringify(value,null,2);}
+$("loginbtn").onclick=async()=>{try{const d=await api("/api/auth/login","POST",{store_code:$("store").value,login_id:$("loginid").value,password:$("password").value});token=d.access_token;$("login").classList.add("hidden");$("app").classList.remove("hidden");$("logout").classList.remove("hidden");await loadAll();msg("ログインしました。");}catch(e){msg(e.message,"loginmsg")}};
+$("logout").onclick=()=>{token="";$("app").classList.add("hidden");$("login").classList.remove("hidden");$("logout").classList.add("hidden")};
+async function loadAll(){const [tables,products,sets,casts,settings]=await Promise.all([api("/api/tables"),api("/api/products"),api("/api/set-menus"),api("/api/casts"),api("/api/settings")]);master={products,sets,casts,tables};fill("editproduct",products,p=>p.product_name);fill("editmenu",sets,s=>s.name);fill("editcast",casts,c=>c.cast_name);fill("edittable",tables,t=>t.table_name);setSettings(settings);
+$("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement("button");b.className="table "+t.status;b.textContent=t.table_name+String.fromCharCode(10)+t.status+(t.session_id?String.fromCharCode(10)+"Session #"+t.session_id:"");b.onclick=()=>{$("tableid").value=t.id;if(t.session_id){$("sessionid").value=t.session_id;$("ordersession").value=t.session_id;$("billsession").value=t.session_id}};$("tables").append(b)});
+fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);fill("payrollcast",casts,c=>c.cast_name);
+}
+
+function selected(id,items){return items.find(x=>String(x.id)===$(id).value)}
+$("loadproduct").onclick=()=>{const p=selected("editproduct",master.products);if(p){$("prodname").value=p.product_name;$("prodprice").value=p.selling_price;$("prodrate").value=p.back_rate}};
+$("saveproduct").onclick=async()=>{try{const id=$("editproduct").value;msg(await api("/api/products/"+id,"PUT",{product_name:$("prodname").value,selling_price:$("prodprice").value,back_rate:$("prodrate").value,back_type:"percentage",is_active:true}));await loadAll()}catch(e){msg(e.message)}};
+$("disableproduct").onclick=async()=>{try{const p=selected("editproduct",master.products);if(!p||!confirm(p.product_name+" を利用停止しますか？"))return;msg(await api("/api/products/"+p.id,"PUT",{product_name:p.product_name,selling_price:p.selling_price,back_rate:p.back_rate,back_type:p.back_type,is_active:false}));await loadAll()}catch(e){msg(e.message)}};
+$("loadmenu").onclick=()=>{const s=selected("editmenu",master.sets);if(s){$("setname").value=s.name;$("setminutes").value=s.duration_minutes;$("setprice").value=s.price}};
+$("savemenu").onclick=async()=>{try{const id=$("editmenu").value;const s=selected("editmenu",master.sets);msg(await api("/api/set-menus/"+id,"PUT",{name:$("setname").value,duration_minutes:+$("setminutes").value,price:$("setprice").value,is_extension:!!s.is_extension,is_active:true}));await loadAll()}catch(e){msg(e.message)}};
+$("disablemenu").onclick=async()=>{try{const s=selected("editmenu",master.sets);if(!s||!confirm(s.name+" を利用停止しますか？"))return;msg(await api("/api/set-menus/"+s.id,"PUT",{name:s.name,duration_minutes:s.duration_minutes,price:s.price,is_extension:!!s.is_extension,is_active:false}));await loadAll()}catch(e){msg(e.message)}};
+$("loadcast").onclick=()=>{const x=selected("editcast",master.casts);if(x){$("castcode").value=x.cast_code;$("castname").value=x.cast_name;$("castwage").value=x.hourly_wage}};
+$("savecast").onclick=async()=>{try{const id=$("editcast").value;msg(await api("/api/casts/"+id,"PUT",{cast_code:$("castcode").value,cast_name:$("castname").value,hourly_wage:$("castwage").value,is_active:true}));await loadAll()}catch(e){msg(e.message)}};
+$("disablecast").onclick=async()=>{try{const x=selected("editcast",master.casts);if(!x||!confirm(x.cast_name+" を利用停止しますか？"))return;msg(await api("/api/casts/"+x.id,"PUT",{cast_code:x.cast_code,cast_name:x.cast_name,hourly_wage:x.hourly_wage,is_active:false}));await loadAll()}catch(e){msg(e.message)}};
+$("loadtable").onclick=()=>{const t=selected("edittable",master.tables);if(t){$("newtable").value=t.table_name}};
+$("savetable").onclick=async()=>{try{const t=selected("edittable",master.tables);msg(await api("/api/tables/"+t.id,"PUT",{table_name:$("newtable").value,capacity:t.capacity,is_active:true}));await loadAll()}catch(e){msg(e.message)}};
+$("disabletable").onclick=async()=>{try{const t=selected("edittable",master.tables);if(!t||!confirm(t.table_name+" を利用停止しますか？"))return;msg(await api("/api/tables/"+t.id,"PUT",{table_name:t.table_name,capacity:t.capacity,is_active:false}));await loadAll()}catch(e){msg(e.message)}};
+function setSettings(s){$("taxenabled").checked=!!s.tax_enabled;$("taxrate").value=s.tax_rate;$("taxmode").value=s.tax_mode;$("serviceenabled").checked=!!s.service_enabled;$("servicemode").value=s.service_mode;$("servicerate").value=s.service_rate;$("servicefixed").value=s.service_fixed_amount;$("servicebasis").value=s.service_basis;$("servicetaxable").checked=!!s.service_taxable;$("roundminutes").value=s.work_rounding_minutes;$("roundmode").value=s.work_rounding_mode}
+$("savesettings").onclick=async()=>{try{const d=await api("/api/settings","PUT",{tax_enabled:$("taxenabled").checked,tax_rate:$("taxrate").value,tax_mode:$("taxmode").value,service_enabled:$("serviceenabled").checked,service_rate:$("servicerate").value,service_mode:$("servicemode").value,service_fixed_amount:$("servicefixed").value,service_taxable:$("servicetaxable").checked,service_basis:$("servicebasis").value,work_rounding_minutes:+$("roundminutes").value,work_rounding_mode:$("roundmode").value});msg(d)}catch(e){msg(e.message)}};
+function localDate(){const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)}
+function fill(id,arr,label){const el=$(id);el.replaceChildren();arr.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=label(x);el.append(o)})}
+$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));
+$("addtable").onclick=async()=>{try{msg(await api("/api/tables","POST",{table_name:$("newtable").value,capacity:4}));await loadAll()}catch(e){msg(e.message)}};
+$("addcast").onclick=async()=>{try{msg(await api("/api/casts","POST",{cast_code:$("castcode").value,cast_name:$("castname").value,hourly_wage:$("castwage").value}));await loadAll()}catch(e){msg(e.message)}};
+$("addproduct").onclick=async()=>{try{msg(await api("/api/products","POST",{product_name:$("prodname").value,selling_price:$("prodprice").value,back_rate:$("prodrate").value,back_type:"percentage"}));await loadAll()}catch(e){msg(e.message)}};
+$("addmenu").onclick=async()=>{try{msg(await api("/api/set-menus","POST",{name:$("setname").value,duration_minutes:+$("setminutes").value,price:$("setprice").value,is_extension:false}));await loadAll()}catch(e){msg(e.message)}};
+
+$("seat").onclick=async()=>{try{const d=await api("/api/sessions","POST",{table_id:+$("tableid").value,customer_count:+$("people").value,idempotency_key:key()});["sessionid","ordersession","billsession"].forEach(id=>$(id).value=d.session_id);msg(d);await loadAll()}catch(e){msg(e.message)}};
+$("addset").onclick=async()=>{try{msg(await api("/api/sessions/"+$("sessionid").value+"/sets","POST",{set_menu_id:+$("setmenu").value}))}catch(e){msg(e.message)}};
+$("order").onclick=async()=>{try{const selected=[...$("cast").selectedOptions].map(o=>+o.value);const allocations=selected.map(id=>({cast_id:id,allocation_rate:100/Math.max(selected.length,1)}));const d=await api("/api/orders","POST",{session_id:+$("ordersession").value,idempotency_key:key(),items:[{product_id:+$("product").value,quantity:$("quantity").value,allocations}]});msg(d)}catch(e){msg(e.message)}};
+$("bill").onclick=async()=>{try{const d=await api("/api/sessions/"+$("billsession").value+"/bill");$("payamount").value=d.balance;msg(d)}catch(e){msg(e.message)}};
+$("pay").onclick=async()=>{try{const d=await api("/api/payments","POST",{session_id:+$("billsession").value,payment_method:$("method").value,amount:$("payamount").value,idempotency_key:key()});if(d.payment_id)$("paymentid").value=d.payment_id;msg(d);await loadAll()}catch(e){msg(e.message)}};
+$("refund").onclick=async()=>{if(!confirm("この決済の返金を登録しますか？"))return;try{const d=await api("/api/payments/"+$("paymentid").value+"/refund","POST",{amount:$("refundamount").value,reason:$("refundreason").value,idempotency_key:key()});msg(d)}catch(e){msg(e.message)}};
+$("confirmPayroll").onclick=async()=>{try{const date=$("payrolldate").value;const id=$("payrollcast").value;msg(await api("/api/casts/"+id+"/payroll/confirm?business_date="+encodeURIComponent(date),"POST"))}catch(e){msg(e.message)}};
+$("payrolldate").value=localDate();
+$("close").onclick=async()=>{if(!confirm("この営業日の締め処理を実行しますか？"))return;try{msg(await api("/api/closings/run","POST",{business_date:$("closedate").value}))}catch(e){msg(e.message)}};
+$("closedate").value=new Date().toLocaleDateString("en-CA");
+</script></body></html>
