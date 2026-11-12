@@ -1,28 +1,37 @@
-# InfinityFree deployment package
+# InfinityFree PHP/MySQL POS
 
-This is a PHP/MySQL website port foundation for the Girls Bar POS. It is deliberately separate from the FastAPI backend because the InfinityFree free plan is PHP/MySQL website hosting, not a Python application host or a public API host.
+This is the PHP/MySQL browser-hosted edition of Girls Bar POS. It is separate from the FastAPI backend because InfinityFree free hosting is not a Python application host. The PHP page calls same-origin PHP endpoints and connects to MySQL through PDO.
 
-## Current scope
-- PHP 8 + PDO MySQL connection
-- Session login using password_hash/password_verify
-- CSRF token on POST forms
-- Session ID rotation on successful login
-- Store-scoped table list
-- MySQL schema copy using utf8mb4_unicode_ci
+## Implemented in this development branch
+- PHP session login, password verification, CSRF protection and session ID rotation
+- Store-scoped table, product, set-menu and cast master data
+- Touch-oriented responsive POS page for iPad, smartphones and PC
+- Table session opening, set/extension registration and product orders
+- Per-order-item back allocations to one or more casts
+- Tax/service-fee settings and bill calculation
+- Payment registration, partial payments and refund records
+- Cast clock-in/clock-out, break-time correction and attendance listing
+- Effective-dated hourly wage history, work-time rounding and back aggregation
+- Expense entry and daily closing checks/reconciliation with saved detail rows
+- CI lint checks, MySQL 8 schema validation and browser JavaScript syntax validation
 
-The current PHP page is only the deployment foundation: login and store-scoped table list. The full POS workflows (orders, set extensions, back allocations, billing, payment/refund, attendance, payroll and daily closing) still need to be ported from `backend/app/main.py` into ordinary browser-facing PHP page/form handlers and tested on the target host. Do not use the FastAPI app or Dockerfile on InfinityFree.
+## Important limitations before live operation
+- Do not use for actual payroll until an accountant/labor specialist reviews statutory overtime, late-night premiums, holiday premiums, 60-hour overtime premiums, insurance, withholding, paid leave and the applicable employment rules. The current PHP calculation covers base hourly pay + back and statutory break-recording checks only.
+- Tax/service fee configuration is currently store-wide. Historical billing needs a dedicated immutable per-session bill snapshot before changing rates after prior transactions.
+- Full integration testing against a live InfinityFree database and iPad/browser acceptance testing are still required.
+- Do not deploy or use with real customer payments until all tests and the production checklist pass.
 
-## Prepare hosting
-1. Create an InfinityFree hosting account and a free subdomain.
-2. In Control Panel, create a MySQL database.
-3. Copy `config.example.php` to `config.php` on your own computer and enter the exact MySQL host, database name, username and password from the control panel. Generate a random app_secret of at least 64 characters. Never commit `config.php`.
-4. Upload only `index.php` and `.htaccess` to `htdocs`. Also upload your private `config.php` after filling it locally. Do not upload `config.example.php`, `bootstrap_owner.php`, or the `database` folder.
-5. Import the local file `database/schema.sql` using phpMyAdmin (this file is not placed in the public website directory).
-6. Use HTTPS and confirm the browser shows the secure connection before staff login.
-7. Create the first store and owner using a one-time local bootstrap script; do not expose an unauthenticated web setup page on the public site.
+## Prepare hosting (not yet deployed)
+1. Create the InfinityFree hosting account and a MySQL database in its control panel.
+2. Copy `config.example.php` to `config.php` locally. Enter the DB host/name/user/password from the control panel and generate a random app_secret of at least 64 characters. Never commit this file or paste credentials into chat.
+3. Import `database/schema.sql` into the hosting database only after confirming it is empty or backed up.
+4. Create the first store and owner account using `bootstrap_owner.php` locally with PHP CLI. Never upload this script.
+5. Upload these files to `htdocs`: `index.php`, `api.php`, `api_workflows.php`, `pos.js`, `pos.css`, and `.htaccess`. Upload your private `config.php` separately. Do not upload the `database` folder, `config.example.php`, `bootstrap_owner.php`, schema or docs.
+6. Confirm HTTPS, log in with the owner account, add test tables/products/sets/casts, and test the full workflow with dummy data before any real operation.
 
-## Important
-- Never paste hosting passwords, database passwords, FTP passwords or private tokens into chat or GitHub.
-- InfinityFree free hosting does not allow remote MySQL access. Database access must be made by PHP code running in the same hosting account.
-- InfinityFree states its free hosting is intended for browser-accessed websites and does not allow API hosting. This package uses normal PHP page requests; do not expose a general-purpose JSON API.
-- Do not put the site into real-store operation until all POS workflows and permissions have been ported and tested.
+## Hosting and security
+- Keep `config.php` private; root .htaccess denies direct web access to it.
+- InfinityFree free hosting does not allow remote MySQL connections. The PHP code must connect from the same hosting account.
+- The API is same-origin and uses the PHP session plus CSRF token. It never accepts a client-selected store ID.
+- Use prepared statements, store-scoped queries, soft-disable for master data, idempotency keys for retryable sales writes, and transactional payment/payroll/closing operations.
+- Keep the main branch and the original `tax.html` untouched until a separately approved release.
