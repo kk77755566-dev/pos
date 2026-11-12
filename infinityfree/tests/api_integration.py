@@ -97,6 +97,17 @@ payment = api("payments", "POST", pay_body, 201)
 assert payment["session_closed"] is True
 assert api("payments", "POST", pay_body)["replayed"] is True
 
+# Once payment starts, later store-setting edits must not alter this session's bill.
+api("settings", "PUT", {
+    "tax_enabled": True, "tax_rate": 20, "tax_mode": "exclusive",
+    "service_enabled": True, "service_rate": 5, "service_mode": "rate",
+    "service_fixed_amount": 0, "service_taxable": True, "service_basis": "all_subtotal",
+    "rounding_mode": "ceil", "work_rounding_minutes": 15, "work_rounding_mode": "floor"
+})
+locked_bill = api(f"sessions/{session_id}/bill")
+assert locked_bill["snapshot_locked"] is True
+assert locked_bill["total"] == bill["total"], (bill, locked_bill)
+
 api(f"payments/{payment['payment_id']}/refund", "POST", {
     "amount": 100, "reason": "CI partial refund", "idempotency_key": "ci-refund-unique-001"
 }, 201)
