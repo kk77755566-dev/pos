@@ -101,6 +101,12 @@ if (preg_match('#^casts/([0-9]+)$#',$route,$m) && $method==='PUT') {
     if($code===''||mb_strlen($code)>40||$name===''||mb_strlen($name)>120||$wage<0)respond(422,['error'=>'キャスト情報が不正です']);
     $q=$wfdb->prepare('UPDATE casts SET cast_code=?,cast_name=?,hourly_wage=?,is_active=? WHERE store_id=? AND id=?');$q->execute([$code,$name,$wage,$active,$store,$id]);respond(200,['ok'=>true]);
 }
+if ($route==='expenses' && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'経費登録権限がありません']);
+    $date=(string)($d['business_date']??businessDate($wfdb,$store));$category=trim((string)($d['category']??''));$amount=round((float)($d['amount']??0),2);$desc=trim((string)($d['description']??''));
+    if(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',$date)||$category===''||mb_strlen($category)>80||$amount<0)respond(422,['error'=>'経費情報が不正です']);
+    $q=$wfdb->prepare('INSERT INTO expenses(store_id,business_date,category,amount,description,created_by_user_id) VALUES(?,?,?,?,?,?)');$q->execute([$store,$date,$category,$amount,$desc,(int)$u['id']]);respond(201,['expense_id'=>(int)$wfdb->lastInsertId()]);
+}
 if ($route === 'settings') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
     $minutes=(int)($d['work_rounding_minutes']??15);
@@ -188,7 +194,7 @@ if ($route === 'closings/run') {
     ];
     foreach($checks as [$code,$sql,$label]){$q=$wfdb->prepare($sql);$q->execute([$store,$date]);$n=(int)$q->fetchColumn();if($n)$errors[]=['code'=>$code,'description'=>$label.' '.$n.'件'];}
     $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
-    $q=$wfdb->prepare('SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status IN ("closed","cancelled") ORDER BY id');$q->execute([$store,$date]);$sessions=$q->fetchAll();
+    $q=$wfdb->prepare('SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status='closed' ORDER BY id');$q->execute([$store,$date]);$sessions=$q->fetchAll();
     $subtotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
     foreach($sessions as $session){
         $sid=(int)$session['id'];
