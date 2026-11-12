@@ -1040,7 +1040,8 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 "service_taxable": bool(settings["service_taxable"]),
                 "service_basis": settings["service_basis"],
             }
-            refund_total = Decimal(str(refunds["refund_total"] or 0))\n            sales_total = Decimal(str(sales["total"] or 0)) - refund_total
+            refund_total = Decimal(str(refunds["refund_total"] or 0))
+            sales_total = Decimal(str(sales["total"] or 0)) - refund_total
             cur.execute(
                 """UPDATE daily_closings SET status=%s,
                        sales_subtotal=%s, service_total=%s, tax_total=%s, sales_total=%s, refund_total=%s,
