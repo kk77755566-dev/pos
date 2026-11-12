@@ -1,4 +1,5 @@
-from datetime import datetime, timezone\nfrom decimal import Decimal
+from datetime import datetime, timezone
+from decimal import Decimal
 
 from fastapi.testclient import TestClient
 
