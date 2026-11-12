@@ -120,6 +120,13 @@ assert locked_bill["total"] == discounted_bill["total"], (discounted_bill, locke
 api(f"payments/{payment['payment_id']}/refund", "POST", {
     "amount": 100, "reason": "CI partial refund", "idempotency_key": "ci-refund-unique-001"
 }, 201)
+after_refund = api(f"sessions/{session_id}/bill")
+assert after_refund["status"] == "checkout" and abs(after_refund["balance"] - 100) < 0.01
+repayment = api("payments", "POST", {
+    "session_id": session_id, "payment_method": "cash", "amount": 100,
+    "idempotency_key": "ci-repayment-unique-001"
+}, 201)
+assert repayment["session_closed"] is True
 
 # Verify store-configured whole-yen rounding is applied consistently to the bill.
 round_product = api("products", "POST", {

@@ -95,7 +95,8 @@ if ($method === 'GET' && preg_match('#^sessions/([0-9]+)/bill$#',$route,$m)) {
     $q=$wfdb->prepare('SELECT id,status FROM table_sessions WHERE store_id=? AND id=?'); $q->execute([$store,$sid]); $session=$q->fetch();
     if(!$session) respond(404,['error'=>'卓が見つかりません']);
     $bill=posGetSessionBill($wfdb,$store,$sid);
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status IN ('completed','refunded')");$q->execute([$store,$sid]);$paidGross=(float)$q->fetchColumn();
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(r.amount),0) FROM payment_refunds r JOIN payments p ON p.store_id=r.store_id AND p.id=r.payment_id WHERE p.store_id=? AND p.session_id=?');$q->execute([$store,$sid]);$paid=$paidGross-(float)$q->fetchColumn();
     respond(200,['session_id'=>$sid,'status'=>$session['status']]+$bill+['paid'=>$paid,'balance'=>max(0,round((float)$bill['total']-$paid,2))]);
 }
 if ($method === 'GET' && $route === 'attendance') {
@@ -278,7 +279,8 @@ if ($route === 'payments') {
         $bill['snapshot_locked']=true;
     }
     $total=(float)$bill['total'];
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status IN ('completed','refunded')");$q->execute([$store,$sid]);$paidGross=(float)$q->fetchColumn();
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(r.amount),0) FROM payment_refunds r JOIN payments p ON p.store_id=r.store_id AND p.id=r.payment_id WHERE p.store_id=? AND p.session_id=?');$q->execute([$store,$sid]);$paid=$paidGross-(float)$q->fetchColumn();
     if($amount>$total-$paid+0.001){$wfdb->rollBack();respond(422,['error'=>'請求残額を超える入金です']);}
     $q=$wfdb->prepare("INSERT INTO payments(store_id,session_id,payment_method,amount,status,idempotency_key,paid_at,created_by_user_id) VALUES(?,?,?,?,'completed',?,UTC_TIMESTAMP(3),?)");$q->execute([$store,$sid,$method,$amount,$key,(int)$u['id']]);$pid=(int)$wfdb->lastInsertId();$newPaid=$paid+$amount;$closed=$newPaid>=$total-0.001;
     if($closed){$wfdb->prepare("UPDATE table_sessions SET status='closed',ended_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$store,$sid]);$wfdb->prepare("UPDATE tables SET status='available' WHERE store_id=? AND id=?")->execute([$store,$s['table_id']]);}
@@ -294,7 +296,9 @@ if (preg_match('#^payments/([0-9]+)/refund$#',$route,$m)) {
     $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM payment_refunds WHERE store_id=? AND payment_id=?');$q->execute([$store,$pid]);$already=(float)$q->fetchColumn();if($amount>(float)$p['amount']-$already+0.001){$wfdb->rollBack();respond(422,['error'=>'返金可能額を超えています']);}
     $wfdb->prepare('INSERT INTO payment_refunds(store_id,payment_id,business_date,amount,reason,refunded_at,created_by_user_id,idempotency_key) VALUES(?,?,?,?,?,UTC_TIMESTAMP(3),?,?)')->execute([$store,$pid,$p['business_date'],$amount,$reason,(int)$u['id'],$key]);$rid=(int)$wfdb->lastInsertId();
     if($already+$amount>=(float)$p['amount']-0.001)$wfdb->prepare("UPDATE payments SET status='refunded' WHERE store_id=? AND id=?")->execute([$store,$pid]);
-    $wfdb->commit();respond(201,['refund_id'=>$rid,'refunded_total'=>$already+$amount]);
+    $q=$wfdb->prepare('SELECT session_id,table_id FROM table_sessions WHERE store_id=? AND id=(SELECT session_id FROM payments WHERE store_id=? AND id=?) FOR UPDATE');$q->execute([$store,$store,$pid]);$sessionRow=$q->fetch();
+    if($sessionRow){$wfdb->prepare("UPDATE table_sessions SET status='checkout',ended_at=NULL WHERE store_id=? AND id=?")->execute([$store,$sessionRow['session_id']]);$wfdb->prepare("UPDATE tables SET status='checkout' WHERE store_id=? AND id=?")->execute([$store,$sessionRow['table_id']]);}
+    $wfdb->commit();respond(201,['refund_id'=>$rid,'refunded_total'=>$already+$amount,'session_reopened'=>true]);
 }
 if ($route === 'closings/run') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'日締め権限がありません']);
