@@ -152,7 +152,9 @@ api("attendance/clock-out", "POST", {"cast_id": 1}, 200)
 attendance = api("attendance")["data"]
 assert attendance and attendance[0]["clock_out_at"]
 business_date = attendance[0]["business_date"]
-api(f"casts/1/payroll/confirm?business_date={business_date}", "POST", {}, 200)
+payroll_one = api(f"casts/1/payroll/confirm?business_date={business_date}", "POST", {"adjustment": 25, "adjustment_reason": "CI adjustment"}, 200)
+assert payroll_one["adjustment"] == 25
+assert abs(payroll_one["total_pay"] - payroll_one["hourly_pay"] - payroll_one["back_pay"] - 25) < 0.01
 
 # Cast accounts can see only their own attendance/payroll and clock themselves in/out.
 cast_jar = http.cookiejar.CookieJar()
@@ -187,11 +189,13 @@ cast_request("index.php", "POST", {
 cast_csrf = cast_request("api.php?r=csrf")["csrf"]
 cast_request("api.php?r=cast/clock-in", "POST", {}, csrf=cast_csrf)
 cast_request("api.php?r=cast/clock-out", "POST", {}, csrf=cast_csrf)
-api(f"casts/{new_cast}/payroll/confirm?business_date={business_date}", "POST", {}, 200)
+payroll_cast = api(f"casts/{new_cast}/payroll/confirm?business_date={business_date}", "POST", {"adjustment": -10, "adjustment_reason": "CI correction"}, 200)
+assert payroll_cast["adjustment"] == -10
 cast_home = cast_request("api.php?r=cast/me")
 assert cast_home["cast_id"] == new_cast
 assert cast_home["attendance"] and cast_home["attendance"][0]["clock_out_at"]
 assert cast_home["payroll"] and cast_home["payroll"][0]["status"] == "confirmed"
+assert float(cast_home["payroll"][0]["adjustment"]) == -10
 cast_request("api.php?r=settings", expected=403)
 cast_request(f"api.php?r=sessions/{session_id}/bill", expected=403)
 

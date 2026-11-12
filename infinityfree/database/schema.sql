@@ -407,6 +407,7 @@ CREATE TABLE payroll_details (
   hourly_pay DECIMAL(12,2) NOT NULL,
   back_pay DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   adjustment DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  adjustment_reason VARCHAR(200) NULL,
   total_pay DECIMAL(12,2) NOT NULL,
   status ENUM('calculated','confirmed','paid','adjusted') NOT NULL DEFAULT 'calculated',
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

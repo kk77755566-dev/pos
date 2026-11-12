@@ -32,7 +32,7 @@ $('pay').onclick=()=>run(async()=>{const r=await api('payments','POST',{session_
 $('refund').onclick=()=>run(async()=>{if(!confirm('返金を登録しますか？'))return;return api('payments/'+$('paymentid').value+'/refund','POST',{amount:+$('refundamount').value,reason:$('refundreason').value,idempotency_key:key()})});
 $('clockin').onclick=()=>run(async()=>api('attendance/clock-in','POST',{cast_id:+$('attcast').value}));
 $('clockout').onclick=()=>run(async()=>api('attendance/clock-out','POST',{cast_id:+$('attcast').value}));
-$('confirmPayroll').onclick=()=>run(async()=>api('casts/'+$('paycast').value+'/payroll/confirm?business_date='+encodeURIComponent($('paydate').value),'POST',{}));
+$('confirmPayroll').onclick=()=>run(async()=>api('casts/'+$('paycast').value+'/payroll/confirm?business_date='+encodeURIComponent($('paydate').value),'POST',{adjustment:+$('payadjustment').value||0,adjustment_reason:$('payadjustmentreason').value}));
 $('reportfrom').value=dateNow();$('reportto').value=dateNow();
 $('runsalesreport').onclick=()=>run(async()=>{const from=$('reportfrom').value,to=$('reportto').value;if(!from||!to)throw Error('集計期間を指定してください');const r=await api('reports/sales?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));$('salesReport').textContent=JSON.stringify(r,null,2);return r});
 $('expensedate').value=dateNow();$('addexpense').onclick=()=>run(async()=>api('expenses','POST',{business_date:$('expensedate').value,category:$('expensecategory').value,amount:+$('expenseamount').value,description:$('expensedesc').value}));
