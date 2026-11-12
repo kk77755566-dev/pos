@@ -108,7 +108,7 @@ if (preg_match('#^casts/([0-9]+)$#',$route,$m) && $method==='PUT') {
 }
 if ($route==='expenses' && $method==='POST') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'経費登録権限がありません']);
-    $date=(string)($d['business_date']??businessDate($wfdb,$store));$category=trim((string)($d['category']??''));$amount=round((float)($d['amount']??0),2);$desc=trim((string)($d['description']??''));
+    $date=(string)($d['business_date']??businessDate($wfdb,$store));assertBusinessDateOpen($wfdb,$store,$date);$category=trim((string)($d['category']??''));$amount=round((float)($d['amount']??0),2);$desc=trim((string)($d['description']??''));
     if(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',$date)||$category===''||mb_strlen($category)>80||$amount<0)respond(422,['error'=>'経費情報が不正です']);
     $q=$wfdb->prepare('INSERT INTO expenses(store_id,business_date,category,amount,description,created_by_user_id) VALUES(?,?,?,?,?,?)');$q->execute([$store,$date,$category,$amount,$desc,(int)$u['id']]);respond(201,['expense_id'=>(int)$wfdb->lastInsertId()]);
 }
@@ -124,7 +124,7 @@ if ($route==='attendance/break') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'休憩修正権限がありません']);
     $aid=(int)($d['attendance_id']??0);$break=(int)($d['break_minutes']??-1);if($aid<1||$break<0||$break>720)respond(422,['error'=>'休憩時間が不正です']);
     $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id,clock_in_at,clock_out_at FROM attendance WHERE store_id=? AND id=? FOR UPDATE');$q->execute([$store,$aid]);$a=$q->fetch();
-    if(!$a||!$a['clock_out_at']){$wfdb->rollBack();respond(409,['error'=>'退勤済みの勤怠だけ休憩を修正できます']);}
+    if(!$a||!$a['clock_out_at']){$wfdb->rollBack();respond(409,['error'=>'退勤済みの勤怠だけ休憩を修正できます']);}$q=$wfdb->prepare('SELECT business_date FROM attendance WHERE store_id=? AND id=?');$q->execute([$store,$aid]);assertBusinessDateOpen($wfdb,$store,(string)$q->fetchColumn());
     $minutes=(int)floor((strtotime($a['clock_out_at'])-strtotime($a['clock_in_at']))/60);if($break>$minutes){$wfdb->rollBack();respond(422,['error'=>'休憩時間が勤務時間を超えています']);}
     $q=$wfdb->prepare("SELECT COUNT(*) FROM payroll_details p JOIN attendance a ON a.store_id=p.store_id AND a.cast_id=p.cast_id AND a.business_date=p.business_date WHERE a.store_id=? AND a.id=? AND p.status IN ('confirmed','paid')");$q->execute([$store,$aid]);if((int)$q->fetchColumn()){$wfdb->rollBack();respond(409,['error'=>'給与確定後の勤怠は変更できません']);}
     $wfdb->prepare("UPDATE attendance SET break_minutes=?,status='corrected',updated_by_user_id=? WHERE store_id=? AND id=?")->execute([$break,(int)$u['id'],$store,$aid]);$wfdb->commit();respond(200,['ok'=>true,'attendance_id'=>$aid,'break_minutes'=>$break]);
@@ -134,12 +134,13 @@ if (preg_match('#^attendance/(clock-in|clock-out)$#',$route,$m)) {
     $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id FROM casts WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE');$q->execute([$store,$cast]);
     if(!$q->fetch()){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
     if($m[1]==='clock-in'){
+        $date=businessDate($wfdb,$store);assertBusinessDateOpen($wfdb,$store,$date);
         $q=$wfdb->prepare('SELECT id FROM attendance WHERE store_id=? AND cast_id=? AND clock_out_at IS NULL FOR UPDATE');$q->execute([$store,$cast]);
         if($q->fetch()){$wfdb->rollBack();respond(409,['error'=>'既に出勤中です']);}
-        $wfdb->prepare("INSERT INTO attendance(store_id,cast_id,business_date,clock_in_at,status,created_by_user_id) VALUES(?,?,?,UTC_TIMESTAMP(3),'working',?)")->execute([$store,$cast,businessDate($wfdb,$store),(int)$u['id']]);
+        $wfdb->prepare("INSERT INTO attendance(store_id,cast_id,business_date,clock_in_at,status,created_by_user_id) VALUES(?,?,?,UTC_TIMESTAMP(3),'working',?)")->execute([$store,$cast,$date,(int)$u['id']]);
     }else{
-        $q=$wfdb->prepare('SELECT id FROM attendance WHERE store_id=? AND cast_id=? AND clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE');$q->execute([$store,$cast]);$a=$q->fetch();
-        if(!$a){$wfdb->rollBack();respond(409,['error'=>'出勤中の記録がありません']);}
+        $q=$wfdb->prepare('SELECT id,business_date FROM attendance WHERE store_id=? AND cast_id=? AND clock_out_at IS NULL ORDER BY clock_in_at DESC LIMIT 1 FOR UPDATE');$q->execute([$store,$cast]);$a=$q->fetch();
+        if(!$a){$wfdb->rollBack();respond(409,['error'=>'出勤中の記録がありません']);}assertBusinessDateOpen($wfdb,$store,$a['business_date']);
         $wfdb->prepare("UPDATE attendance SET clock_out_at=UTC_TIMESTAMP(3),status='completed',updated_by_user_id=? WHERE store_id=? AND id=?")->execute([(int)$u['id'],$store,$a['id']]);
     }
     $wfdb->commit();respond(200,['ok'=>true,'action'=>$m[1]]);
@@ -147,7 +148,7 @@ if (preg_match('#^attendance/(clock-in|clock-out)$#',$route,$m)) {
 if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'給与確定権限がありません']);
     $cast=(int)$m[1];$date=(string)($_GET['business_date']??'');if(!preg_match('/^\\d{4}-\\d{2}-\\d{2}$/',$date))respond(422,['error'=>'対象日が不正です']);
-    $wfdb->beginTransaction();
+    assertBusinessDateOpen($wfdb,$store,$date);$wfdb->beginTransaction();
     $q=$wfdb->prepare('SELECT c.id,COALESCE((SELECT pr.hourly_wage FROM cast_pay_rules pr WHERE pr.store_id=c.store_id AND pr.cast_id=c.id AND pr.valid_from<=? AND (pr.valid_to IS NULL OR pr.valid_to>=?) ORDER BY pr.valid_from DESC LIMIT 1),c.hourly_wage) AS hourly_wage FROM casts c WHERE c.store_id=? AND c.id=? AND c.is_active=1 FOR UPDATE');$q->execute([$date,$date,$store,$cast]);$cst=$q->fetch();if(!$cst){$wfdb->rollBack();respond(404,['error'=>'キャストが見つかりません']);}
     $q=$wfdb->prepare('SELECT COUNT(*) FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NULL');$q->execute([$store,$cast,$date]);if((int)$q->fetchColumn()){$wfdb->rollBack();respond(409,['error'=>'退勤未記録があるため給与を確定できません']);}
     $q=$wfdb->prepare('SELECT COALESCE(SUM(TIMESTAMPDIFF(MINUTE,clock_in_at,clock_out_at)),0) gross_minutes,COALESCE(SUM(break_minutes),0) break_minutes FROM attendance WHERE store_id=? AND cast_id=? AND business_date=? AND clock_out_at IS NOT NULL');$q->execute([$store,$cast,$date]);$time=$q->fetch();$gross=(int)$time['gross_minutes'];$breakMinutes=(int)$time['break_minutes'];$raw=max(0,$gross-$breakMinutes);if($raw>360&&$breakMinutes<45){$wfdb->rollBack();respond(409,['error'=>'実労働6時間超のため45分以上の休憩記録が必要です']);}if($raw>480&&$breakMinutes<60){$wfdb->rollBack();respond(409,['error'=>'実労働8時間超のため60分以上の休憩記録が必要です']);}
@@ -166,8 +167,8 @@ if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
 if ($route === 'payments') {
     $sid=(int)($d['session_id']??0);$amount=round((float)($d['amount']??0),2);$method=(string)($d['payment_method']??'');$key=idempotency($d);
     if($sid<1||$amount<=0||!in_array($method,['cash','credit_card','qr','electronic_money','transfer','other'],true))respond(422,['error'=>'決済情報が不正です']);
-    $wfdb->beginTransaction();$q=$wfdb->prepare("SELECT id,table_id,status FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
-    if(!$s||!in_array($s['status'],['open','checkout'],true)){$wfdb->rollBack();respond(409,['error'=>'会計可能な卓ではありません']);}
+    $wfdb->beginTransaction();$q=$wfdb->prepare("SELECT id,table_id,status,business_date FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
+    if(!$s||!in_array($s['status'],['open','checkout'],true)){$wfdb->rollBack();respond(409,['error'=>'会計可能な卓ではありません']);}assertBusinessDateOpen($wfdb,$store,$s['business_date']);
     $q=$wfdb->prepare('SELECT id FROM payments WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['payment_id'=>(int)$old['id'],'replayed'=>true]);}
     $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
@@ -187,7 +188,7 @@ if (preg_match('#^payments/([0-9]+)/refund$#',$route,$m)) {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'返金権限がありません']);
     $pid=(int)$m[1];$amount=round((float)($d['amount']??0),2);$reason=trim((string)($d['reason']??''));$key=idempotency($d);
     if($amount<=0||$reason==='')respond(422,['error'=>'返金額と理由が必要です']);
-    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT p.id,p.amount,s.business_date FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND p.id=? FOR UPDATE');$q->execute([$store,$pid]);$p=$q->fetch();if(!$p){$wfdb->rollBack();respond(404,['error'=>'決済が見つかりません']);}
+    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT p.id,p.amount,s.business_date FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND p.id=? FOR UPDATE');$q->execute([$store,$pid]);$p=$q->fetch();if(!$p){$wfdb->rollBack();respond(404,['error'=>'決済が見つかりません']);}assertBusinessDateOpen($wfdb,$store,$p['business_date']);
     $q=$wfdb->prepare('SELECT id FROM payment_refunds WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['refund_id'=>(int)$old['id'],'replayed'=>true]);}
     $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM payment_refunds WHERE store_id=? AND payment_id=?');$q->execute([$store,$pid]);$already=(float)$q->fetchColumn();if($amount>(float)$p['amount']-$already+0.001){$wfdb->rollBack();respond(422,['error'=>'返金可能額を超えています']);}
     $wfdb->prepare('INSERT INTO payment_refunds(store_id,payment_id,business_date,amount,reason,refunded_at,created_by_user_id,idempotency_key) VALUES(?,?,?,?,?,UTC_TIMESTAMP(3),?,?)')->execute([$store,$pid,$p['business_date'],$amount,$reason,(int)$u['id'],$key]);$rid=(int)$wfdb->lastInsertId();
