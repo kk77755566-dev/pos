@@ -225,8 +225,10 @@ CREATE TABLE session_set_items (
   price_snapshot DECIMAL(12,2) NOT NULL,
   started_at DATETIME(3) NOT NULL,
   ends_at DATETIME(3) NOT NULL,
+  idempotency_key VARCHAR(100) NOT NULL,
   status ENUM('active','completed','cancelled') NOT NULL DEFAULT 'active',
   PRIMARY KEY (id),
+  UNIQUE KEY uq_session_set_items_idempotency (store_id,idempotency_key),
   KEY ix_session_set_items_session (store_id, session_id, status),
   CONSTRAINT fk_session_set_items_session FOREIGN KEY (store_id, session_id) REFERENCES table_sessions(store_id, id),
   CONSTRAINT fk_session_set_items_menu FOREIGN KEY (store_id, set_menu_id) REFERENCES set_menus(store_id, id)
