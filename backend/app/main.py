@@ -935,8 +935,12 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 (store_id, body.business_date),
             )
             closed_sessions = cur.fetchall()
+            service_total = Decimal("0.00")
+            tax_total = Decimal("0.00")
             for s in closed_sessions:
                 bill = session_bill(cur, store_id, s["id"])
+                service_total += bill["service"]
+                tax_total += bill["tax"]
                 cur.execute(
                     """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
                         WHERE store_id=%s AND session_id=%s AND status='completed'""",
@@ -977,13 +981,14 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
             sales_total = Decimal(str(sales["total"] or 0))
             cur.execute(
                 """UPDATE daily_closings SET status=%s,
-                       sales_subtotal=%s, sales_total=%s,
+                       sales_subtotal=%s, service_total=%s, tax_total=%s, sales_total=%s,
                        cash_total=%s,card_total=%s,other_total=%s,
                        payroll_total=%s,expense_total=%s,difference=%s,
                        settings_snapshot=%s,closed_at=%s
                     WHERE store_id=%s AND id=%s""",
                 ("blocked" if errors else "closed",
-                 str(money(set_sales + item_sales)), str(money(sales_total)),
+                 str(money(set_sales + item_sales)), str(money(service_total)),
+                 str(money(tax_total)), str(money(sales_total)),
                  str(money(Decimal(str(sales["cash_total"] or 0)))),
                  str(money(Decimal(str(sales["card_total"] or 0)))),
                  str(money(Decimal(str(sales["other_total"] or 0)))),
