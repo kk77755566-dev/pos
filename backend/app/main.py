@@ -230,7 +230,10 @@ def current_business_date(cur, store_id: int, timestamp: datetime | None = None)
     if stamp.tzinfo is None:
         stamp = stamp.replace(tzinfo=timezone.utc)
     local_time = stamp.astimezone(ZoneInfo(store["timezone"]))
-    if local_time.time().replace(tzinfo=None) < store["business_day_start"]:
+    day_start = store["business_day_start"]
+    if isinstance(day_start, timedelta):
+        day_start = (datetime.min + day_start).time()
+    if local_time.time().replace(tzinfo=None) < day_start:
         local_time -= timedelta(days=1)
     return local_time.date()
 
