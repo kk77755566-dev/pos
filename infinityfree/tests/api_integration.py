@@ -171,7 +171,10 @@ def cast_request(path, method="GET", data=None, form=False, csrf=None, expected=
             status, raw = response.status, response.read()
     except urllib.error.HTTPError as exc:
         status, raw = exc.code, exc.read()
-    result = json.loads(raw.decode() or "{}")
+    try:
+        result = json.loads(raw.decode() or "{}")
+    except Exception:
+        result = raw.decode(errors="replace")
     if status != expected:
         raise AssertionError(f"cast {method} {path}: expected {expected}, got {status}: {result}")
     return result
