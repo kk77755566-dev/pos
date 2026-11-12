@@ -72,6 +72,7 @@ new_cast = api("casts", "POST", {"cast_code": "C003", "cast_name": "キャスト
 api(f"casts/{new_cast}", "PUT", {"cast_code": "C003", "cast_name": "キャストC改", "hourly_wage": 1500, "is_active": True})
 api(f"casts/{new_cast}/account", "POST", {"login_id": "castc", "password": "ci-cast-password-123"}, 201)
 
+api("sessions", "POST", {"table_id": 1, "customer_count": 99, "idempotency_key": "ci-overcapacity-001"}, 422)
 session_key = "ci-session-unique-001"
 opened = api("sessions", "POST", {"table_id": 1, "customer_count": 2, "idempotency_key": session_key}, 201)
 session_id = opened["data"]["session_id"]

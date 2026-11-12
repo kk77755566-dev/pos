@@ -91,9 +91,10 @@ try {
         $db->beginTransaction();
         $old=$db->prepare('SELECT id,table_id,status FROM table_sessions WHERE store_id=? AND idempotency_key=?');
         $old->execute([$store,$key]); if ($row=$old->fetch()) {$db->commit();respond(200,['data'=>$row,'replayed'=>true]);}
-        $q=$db->prepare("SELECT id,status FROM `tables` WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE");
+        $q=$db->prepare("SELECT id,status,capacity FROM `tables` WHERE store_id=? AND id=? AND is_active=1 FOR UPDATE");
         $q->execute([$store,$table]); $t=$q->fetch();
         if (!$t || $t['status']!=='available') { $db->rollBack(); respond(409,['error'=>'卓が利用できません']); }
+        if ($count>(int)$t['capacity']) { $db->rollBack(); respond(422,['error'=>'利用人数が卓の定員を超えています']); }
         $q=$db->prepare("SELECT id FROM table_sessions WHERE store_id=? AND table_id=? AND status IN ('open','checkout') LIMIT 1 FOR UPDATE");
         $q->execute([$store,$table]); if ($q->fetch()) {$db->rollBack();respond(409,['error'=>'この卓は既に利用中です']);}
         $q=$db->prepare("INSERT INTO table_sessions(store_id,table_id,business_date,customer_count,started_at,status,created_by_user_id,idempotency_key) VALUES(?,?,?,?,UTC_TIMESTAMP(3),'open',?,?)");
