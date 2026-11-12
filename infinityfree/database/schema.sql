@@ -234,6 +234,25 @@ CREATE TABLE session_set_items (
   CONSTRAINT fk_session_set_items_menu FOREIGN KEY (store_id, set_menu_id) REFERENCES set_menus(store_id, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE session_discounts (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  store_id BIGINT UNSIGNED NOT NULL,
+  session_id BIGINT UNSIGNED NOT NULL,
+  discount_type ENUM('percentage','fixed') NOT NULL,
+  discount_value DECIMAL(12,2) NOT NULL,
+  discount_amount DECIMAL(12,2) NOT NULL,
+  reason VARCHAR(200) NOT NULL,
+  idempotency_key VARCHAR(100) NOT NULL,
+  created_by_user_id BIGINT UNSIGNED NOT NULL,
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_session_discounts_idempotency (store_id,idempotency_key),
+  KEY ix_session_discounts_session (store_id,session_id),
+  CONSTRAINT fk_session_discounts_session FOREIGN KEY (store_id,session_id) REFERENCES table_sessions(store_id,id),
+  CONSTRAINT fk_session_discounts_user FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+  CONSTRAINT chk_session_discounts_value CHECK (discount_value > 0 AND discount_amount > 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE orders (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   store_id BIGINT UNSIGNED NOT NULL,
@@ -320,6 +339,7 @@ CREATE TABLE session_charge_snapshots (
   items_subtotal DECIMAL(12,2) NOT NULL,
   sets_subtotal DECIMAL(12,2) NOT NULL,
   subtotal DECIMAL(12,2) NOT NULL,
+  discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0.00,
   service_amount DECIMAL(12,2) NOT NULL,
   tax_amount DECIMAL(12,2) NOT NULL,
   total_amount DECIMAL(12,2) NOT NULL,

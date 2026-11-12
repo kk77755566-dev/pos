@@ -16,17 +16,22 @@ function posCalculateSessionBill(PDO $db, int $store, int $sid, array $cfg): arr
     $q=$db->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");
     $q->execute([$store,$sid]); $sets=(float)$q->fetchColumn();
     $subtotal=$items+$sets;
+    $q=$db->prepare('SELECT COALESCE(SUM(discount_amount),0) FROM session_discounts WHERE store_id=? AND session_id=?');
+    $q->execute([$store,$sid]); $discount=min($subtotal,(float)$q->fetchColumn());
+    $discounted=max(0,$subtotal-$discount);
     $basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$subtotal);
+    $discountRatio=$subtotal>0?$discount/$subtotal:0;
+    $basis=max(0,$basis*(1-$discountRatio));
     $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)($cfg['service_fixed_amount']??0):round($basis*(float)($cfg['service_rate']??0)/100,2));
-    $taxBase=$subtotal+(!empty($cfg['service_taxable'])?$service:0);
+    $taxBase=$discounted+(!empty($cfg['service_taxable'])?$service:0);
     $tax=empty($cfg['tax_enabled'])?0:round((($cfg['tax_mode']??'exclusive')==='inclusive'?$taxBase-$taxBase/(1+(float)($cfg['tax_rate']??0)/100):$taxBase*(float)($cfg['tax_rate']??0)/100),2);
-    $total=posRoundTotal($subtotal+$service+((($cfg['tax_mode']??'exclusive')==='inclusive')?0:$tax),(string)($cfg['rounding_mode']??'floor'));
-    return ['items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'service'=>$service,'tax'=>$tax,'total'=>$total];
+    $total=posRoundTotal($discounted+$service+((($cfg['tax_mode']??'exclusive')==='inclusive')?0:$tax),(string)($cfg['rounding_mode']??'floor'));
+    return ['items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'discount'=>$discount,'discounted_subtotal'=>$discounted,'service'=>$service,'tax'=>$tax,'total'=>$total];
 }
 function posGetSessionBill(PDO $db, int $store, int $sid): array {
-    $q=$db->prepare('SELECT items_subtotal,sets_subtotal,subtotal,service_amount service,tax_amount tax,total_amount total FROM session_charge_snapshots WHERE store_id=? AND session_id=?');
+    $q=$db->prepare('SELECT items_subtotal,sets_subtotal,subtotal,discount_amount discount,service_amount service,tax_amount tax,total_amount total FROM session_charge_snapshots WHERE store_id=? AND session_id=?');
     $q->execute([$store,$sid]); $saved=$q->fetch();
-    if($saved){foreach(['items_subtotal','sets_subtotal','subtotal','service','tax','total'] as $key)$saved[$key]=(float)$saved[$key];$saved['snapshot_locked']=true;return $saved;}
+    if($saved){foreach(['items_subtotal','sets_subtotal','subtotal','discount','service','tax','total'] as $key)$saved[$key]=(float)$saved[$key];$saved['snapshot_locked']=true;return $saved;}
     $q=$db->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
     $bill=posCalculateSessionBill($db,$store,$sid,$cfg);$bill['snapshot_locked']=false;return $bill;
 }
@@ -70,10 +75,29 @@ if ($method === 'GET' && $route === 'payroll') {
 if (!in_array($method,['POST','PUT'],true)) return;
 $workflowWrite = in_array($route,['settings','tables','products','sets','casts','payments','expenses','attendance/clock-in','attendance/clock-out','attendance/break','closings/run'],true)
     || preg_match('#^(tables|products|sets|casts)/[0-9]+$#',$route)
+    || preg_match('#^sessions/[0-9]+/discounts$#',$route)
     || preg_match('#^payments/[0-9]+/refund$#',$route)
     || preg_match('#^casts/[0-9]+/payroll/confirm$#',$route);
 if (!$workflowWrite) return;
 csrf(); staff($u); $d=input();
+
+/* Apply an explicit discount to an open session. Discount is applied before service fee and tax. */
+if (preg_match('#^sessions/([0-9]+)/discounts$#',$route,$m) && $method==='POST') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'割引登録権限がありません']);
+    $sid=(int)$m[1];$type=(string)($d['discount_type']??'');$value=(float)($d['discount_value']??0);$reason=trim((string)($d['reason']??''));$key=idempotency($d);
+    if(!in_array($type,['percentage','fixed'],true)||$value<=0||($type==='percentage'&&$value>100)||$reason===''||mb_strlen($reason)>200)respond(422,['error'=>'割引内容が不正です']);
+    $wfdb->beginTransaction();
+    $q=$wfdb->prepare('SELECT id,status FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE');$q->execute([$store,$sid]);$s=$q->fetch();
+    if(!$s||$s['status']!=='open'){$wfdb->rollBack();respond(409,['error'=>'営業中の卓にのみ割引できます']);}
+    $q=$wfdb->prepare('SELECT id FROM session_discounts WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['discount_id'=>(int)$old['id'],'replayed'=>true]);}
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(oi.quantity*oi.unit_price_snapshot),0) FROM orders o JOIN order_items oi ON oi.store_id=o.store_id AND oi.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status=\'confirmed\' AND oi.status=\'active\'');$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();$subtotal=$items+$sets;
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(discount_amount),0) FROM session_discounts WHERE store_id=? AND session_id=?');$q->execute([$store,$sid]);$already=(float)$q->fetchColumn();
+    $remaining=max(0,$subtotal-$already);$amount=$type==='percentage'?round($remaining*$value/100,2):round($value,2);
+    if($amount<=0||$amount>$remaining+0.001){$wfdb->rollBack();respond(422,['error'=>'割引額が小計を超えています']);}
+    $wfdb->prepare('INSERT INTO session_discounts(store_id,session_id,discount_type,discount_value,discount_amount,reason,idempotency_key,created_by_user_id) VALUES(?,?,?,?,?,?,?,?)')->execute([$store,$sid,$type,$value,$amount,$reason,$key,(int)$u['id']]);
+    $wfdb->commit();respond(201,['discount_amount'=>$amount,'discount_total'=>$already+$amount]);
+}
 
 /* Master data CRUD: create and update only; delete is always a soft-disable. */
 if ($route==='tables' && $method==='POST') {
@@ -194,8 +218,8 @@ if ($route === 'payments') {
     if(empty($bill['snapshot_locked'])){
         $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
         $snapshotJson=json_encode($cfg,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);
-        $wfdb->prepare('INSERT INTO session_charge_snapshots(store_id,session_id,items_subtotal,sets_subtotal,subtotal,service_amount,tax_amount,total_amount,settings_snapshot) VALUES(?,?,?,?,?,?,?,?,?)')
-            ->execute([$store,$sid,$bill['items_subtotal'],$bill['sets_subtotal'],$bill['subtotal'],$bill['service'],$bill['tax'],$bill['total'],$snapshotJson]);
+        $wfdb->prepare('INSERT INTO session_charge_snapshots(store_id,session_id,items_subtotal,sets_subtotal,subtotal,discount_amount,service_amount,tax_amount,total_amount,settings_snapshot) VALUES(?,?,?,?,?,?,?,?,?,?)')
+            ->execute([$store,$sid,$bill['items_subtotal'],$bill['sets_subtotal'],$bill['subtotal'],$bill['discount'],$bill['service'],$bill['tax'],$bill['total'],$snapshotJson]);
         $bill['snapshot_locked']=true;
     }
     $total=(float)$bill['total'];
@@ -235,11 +259,11 @@ if ($route === 'closings/run') {
     foreach($checks as [$code,$sql,$label]){$q=$wfdb->prepare($sql);$q->execute([$store,$date]);$n=(int)$q->fetchColumn();if($n)$errors[]=['code'=>$code,'description'=>$label.' '.$n.'件'];}
     $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
     $q=$wfdb->prepare("SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status='closed' ORDER BY id");$q->execute([$store,$date]);$sessions=$q->fetchAll();
-    $subtotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
+    $subtotal=0.0;$discountTotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
     foreach($sessions as $session){
         $sid=(int)$session['id'];
         $bill=posGetSessionBill($wfdb,$store,$sid);
-        $sub=(float)$bill['subtotal'];$service=(float)$bill['service'];$tax=(float)$bill['tax'];$total=(float)$bill['total'];
+        $sub=(float)$bill['subtotal'];$discountTotal+=(float)($bill['discount']??0);$service=(float)$bill['service'];$tax=(float)$bill['tax'];$total=(float)$bill['total'];
         $subtotal+=$sub;$serviceTotal+=$service;$taxTotal+=$tax;$salesTotal+=$total;
     }
     $q=$wfdb->prepare('SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.status IN ("completed","refunded")');$q->execute([$store,$date]);$paidGross=(float)$q->fetchColumn();
@@ -249,14 +273,14 @@ if ($route === 'closings/run') {
     if(!$cl){$wfdb->prepare("INSERT INTO daily_closings(store_id,business_date,status,settings_snapshot) VALUES(?,?,'pending',?)")->execute([$store,$date,json_encode($cfg,JSON_UNESCAPED_UNICODE)]);$cid=(int)$wfdb->lastInsertId();}
     else{$cid=(int)$cl['id'];$wfdb->prepare('DELETE FROM closing_errors WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);$wfdb->prepare('DELETE FROM daily_closing_details WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);}
     $ins=$wfdb->prepare('INSERT INTO closing_errors(store_id,daily_closing_id,error_code,description) VALUES(?,?,?,?)');foreach($errors as $e)$ins->execute([$store,$cid,$e['code'],$e['description']]);
-    if($errors){$wfdb->prepare("UPDATE daily_closings SET status='blocked',sales_subtotal=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,difference=?,started_at=UTC_TIMESTAMP(3),closed_at=NULL WHERE store_id=? AND id=?")->execute([$subtotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$difference,$store,$cid]);$wfdb->commit();respond(409,['status'=>'blocked','closing_id'=>$cid,'errors'=>$errors,'difference'=>$difference]);}
+    if($errors){$wfdb->prepare("UPDATE daily_closings SET status='blocked',sales_subtotal=?,discount_total=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,difference=?,started_at=UTC_TIMESTAMP(3),closed_at=NULL WHERE store_id=? AND id=?")->execute([$subtotal,$discountTotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$difference,$store,$cid]);$wfdb->commit();respond(409,['status'=>'blocked','closing_id'=>$cid,'errors'=>$errors,'difference'=>$difference]);}
     $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method='cash' AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$cash=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method='credit_card' AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$card=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method NOT IN ('cash','credit_card') AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$other=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(total_pay),0) FROM payroll_details WHERE store_id=? AND business_date=? AND status IN ('confirmed','paid')");$q->execute([$store,$date]);$pay=(float)$q->fetchColumn();
     $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE store_id=? AND business_date=?');$q->execute([$store,$date]);$expense=(float)$q->fetchColumn();
-    $wfdb->prepare("UPDATE daily_closings SET status='closed',sales_subtotal=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,cash_total=?,card_total=?,other_total=?,payroll_total=?,expense_total=?,difference=0,started_at=UTC_TIMESTAMP(3),closed_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$subtotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$cash,$card,$other,$pay,$expense,$store,$cid]);
+    $wfdb->prepare("UPDATE daily_closings SET status='closed',sales_subtotal=?,discount_total=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,cash_total=?,card_total=?,other_total=?,payroll_total=?,expense_total=?,difference=0,started_at=UTC_TIMESTAMP(3),closed_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$subtotal,$discountTotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$cash,$card,$other,$pay,$expense,$store,$cid]);
     $det=$wfdb->prepare('INSERT INTO daily_closing_details(store_id,daily_closing_id,item_type,amount,detail_json) VALUES(?,?,?,?,?)');
-    foreach([['sales_subtotal',$subtotal],['service',$serviceTotal],['tax',$taxTotal],['sales_total',$salesTotal],['refund',$refund],['cash',$cash],['card',$card],['other_payment',$other],['payroll',$pay],['expense',$expense]] as [$type,$amount])$det->execute([$store,$cid,$type,$amount,json_encode(['business_date'=>$date],JSON_UNESCAPED_UNICODE)]);
+    foreach([['sales_subtotal',$subtotal],['discount',$discountTotal],['service',$serviceTotal],['tax',$taxTotal],['sales_total',$salesTotal],['refund',$refund],['cash',$cash],['card',$card],['other_payment',$other],['payroll',$pay],['expense',$expense]] as [$type,$amount])$det->execute([$store,$cid,$type,$amount,json_encode(['business_date'=>$date],JSON_UNESCAPED_UNICODE)]);
     $wfdb->commit();respond(200,['status'=>'closed','closing_id'=>$cid,'business_date'=>$date,'sales_subtotal'=>$subtotal,'service_total'=>$serviceTotal,'tax_total'=>$taxTotal,'sales_total'=>$salesTotal,'refund_total'=>$refund,'cash_total'=>$cash,'card_total'=>$card,'other_total'=>$other,'payroll_total'=>$pay,'expense_total'=>$expense,'difference'=>0]);
 }

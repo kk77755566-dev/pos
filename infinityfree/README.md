@@ -17,7 +17,7 @@ This is the PHP/MySQL browser-hosted edition of Girls Bar POS. It is separate fr
 
 ## Important limitations before live operation
 - Do not use for actual payroll until an accountant/labor specialist reviews statutory overtime, late-night premiums, holiday premiums, 60-hour overtime premiums, insurance, withholding, paid leave and the applicable employment rules. The current PHP calculation covers base hourly pay + back and statutory break-recording checks only.
-- Tax/service fee configuration is currently store-wide. Historical billing needs a dedicated immutable per-session bill snapshot before changing rates after prior transactions.
+- Tax/service fee configuration is store-wide; per-session discounts are recorded before tax/service calculation and the first payment freezes the final bill snapshot.
 - Full integration testing against a live InfinityFree database and iPad/browser acceptance testing are still required.
 - Do not deploy or use with real customer payments until all tests and the production checklist pass.
 

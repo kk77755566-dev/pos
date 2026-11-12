@@ -92,7 +92,14 @@ assert api("orders", "POST", order_body)["replayed"] is True
 
 bill = api(f"sessions/{session_id}/bill")
 assert bill["total"] > 0 and bill["balance"] == bill["total"]
-pay_body = {"session_id": session_id, "payment_method": "cash", "amount": bill["total"], "idempotency_key": "ci-payment-unique-001"}
+discount = api(f"sessions/{session_id}/discounts", "POST", {
+    "discount_type": "fixed", "discount_value": 100, "reason": "CI discount",
+    "idempotency_key": "ci-discount-unique-001"
+}, 201)
+discounted_bill = api(f"sessions/{session_id}/bill")
+assert discounted_bill["discount"] == 100
+assert discounted_bill["total"] < bill["total"]
+pay_body = {"session_id": session_id, "payment_method": "cash", "amount": discounted_bill["total"], "idempotency_key": "ci-payment-unique-001"}
 payment = api("payments", "POST", pay_body, 201)
 assert payment["session_closed"] is True
 assert api("payments", "POST", pay_body)["replayed"] is True
@@ -106,7 +113,7 @@ api("settings", "PUT", {
 })
 locked_bill = api(f"sessions/{session_id}/bill")
 assert locked_bill["snapshot_locked"] is True
-assert locked_bill["total"] == bill["total"], (bill, locked_bill)
+assert locked_bill["total"] == discounted_bill["total"], (discounted_bill, locked_bill)
 
 api(f"payments/{payment['payment_id']}/refund", "POST", {
     "amount": 100, "reason": "CI partial refund", "idempotency_key": "ci-refund-unique-001"
