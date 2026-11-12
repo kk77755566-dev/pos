@@ -27,6 +27,12 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 <div id="app" class="hidden">
 <section class="panel"><div class="row"><div><h2>卓管理</h2><div class="muted">卓を選択して着席・会計へ進みます。</div></div><button id="refresh" class="secondary">更新</button></div><div id="tables" class="tables"></div></section>
 <div class="two">
+<section class="panel"><h2>店舗マスター登録（オーナー・店長）</h2><div class="grid">
+<div><label>卓名</label><input id="newtable" placeholder="A卓"><button id="addtable" style="margin-top:6px">卓を追加</button></div>
+<div><label>キャストコード</label><input id="castcode" placeholder="C001"><label>キャスト名</label><input id="castname"><label>時給</label><input id="castwage" type="number" min="0"><button id="addcast" style="margin-top:6px">キャストを追加</button></div>
+<div><label>商品名</label><input id="prodname"><label>販売価格</label><input id="prodprice" type="number" min="0"><label>バック率（%）</label><input id="prodrate" type="number" min="0" max="100" value="0"><button id="addproduct" style="margin-top:6px">商品を追加</button></div>
+<div><label>セット名</label><input id="setname"><label>時間（分）</label><input id="setminutes" type="number" min="1" value="60"><label>料金</label><input id="setprice" type="number" min="0"><button id="addmenu" style="margin-top:6px">セットを追加</button></div>
+</div></section>
 <section class="panel"><h2>着席登録</h2><div class="grid"><div><label>卓ID</label><input id="tableid" type="number" min="1"></div><div><label>人数</label><input id="people" type="number" min="1" value="1"></div></div><button id="seat" style="margin-top:10px">着席開始</button></section>
 <section class="panel"><h2>セット・延長</h2><label>営業セッションID</label><input id="sessionid" type="number" min="1"><label style="margin-top:8px">セットメニュー</label><select id="setmenu"></select><button id="addset" style="margin-top:10px">セットを登録</button></section>
 </div>
@@ -52,7 +58,11 @@ $("tables").replaceChildren();tables.forEach(t=>{const b=document.createElement(
 fill("product",products,p=>p.product_name+" ¥"+p.selling_price);fill("setmenu",sets,s=>s.name+" / "+s.duration_minutes+"分 ¥"+s.price);fill("cast",casts,c=>c.cast_name);fill("payrollcast",casts,c=>c.cast_name);
 }
 function fill(id,arr,label){const el=$(id);el.replaceChildren();arr.forEach(x=>{const o=document.createElement("option");o.value=x.id;o.textContent=label(x);el.append(o)})}
-$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));
+$("refresh").onclick=()=>loadAll().catch(e=>msg(e.message));\n$("addtable").onclick=async()=>{try{msg(await api("/api/tables","POST",{table_name:$("newtable").value,capacity:4}));await loadAll()}catch(e){msg(e.message)}};
+$("addcast").onclick=async()=>{try{msg(await api("/api/casts","POST",{cast_code:$("castcode").value,cast_name:$("castname").value,hourly_wage:$("castwage").value}));await loadAll()}catch(e){msg(e.message)}};
+$("addproduct").onclick=async()=>{try{msg(await api("/api/products","POST",{product_name:$("prodname").value,selling_price:$("prodprice").value,back_rate:$("prodrate").value,back_type:"percentage"}));await loadAll()}catch(e){msg(e.message)}};
+$("addmenu").onclick=async()=>{try{msg(await api("/api/set-menus","POST",{name:$("setname").value,duration_minutes:+$("setminutes").value,price:$("setprice").value,is_extension:false}));await loadAll()}catch(e){msg(e.message)}};
+
 $("seat").onclick=async()=>{try{const d=await api("/api/sessions","POST",{table_id:+$("tableid").value,customer_count:+$("people").value,idempotency_key:key()});["sessionid","ordersession","billsession"].forEach(id=>$(id).value=d.session_id);msg(d);await loadAll()}catch(e){msg(e.message)}};
 $("addset").onclick=async()=>{try{msg(await api("/api/sessions/"+$("sessionid").value+"/sets","POST",{set_menu_id:+$("setmenu").value}))}catch(e){msg(e.message)}};
 $("order").onclick=async()=>{try{const selected=[...$("cast").selectedOptions].map(o=>+o.value);const allocations=selected.map(id=>({cast_id:id,allocation_rate:100/Math.max(selected.length,1)}));const d=await api("/api/orders","POST",{session_id:+$("ordersession").value,idempotency_key:key(),items:[{product_id:+$("product").value,quantity:$("quantity").value,allocations}]});msg(d)}catch(e){msg(e.message)}};
