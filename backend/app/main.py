@@ -221,15 +221,18 @@ class OrderCreateRequest(BaseModel):
 def money(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-def current_business_date(cur, store_id: int) -> date:
+def current_business_date(cur, store_id: int, timestamp: datetime | None = None) -> date:
     cur.execute("SELECT timezone,business_day_start FROM stores WHERE id=%s", (store_id,))
     store = cur.fetchone()
     if not store:
         raise HTTPException(status_code=404, detail="Store not found")
-    local_now = datetime.now(ZoneInfo(store["timezone"]))
-    if local_now.time().replace(tzinfo=None) < store["business_day_start"]:
-        local_now -= timedelta(days=1)
-    return local_now.date()
+    stamp = timestamp or datetime.now(timezone.utc)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    local_time = stamp.astimezone(ZoneInfo(store["timezone"]))
+    if local_time.time().replace(tzinfo=None) < store["business_day_start"]:
+        local_time -= timedelta(days=1)
+    return local_time.date()
 
 
 @app.post("/api/orders")
@@ -429,11 +432,11 @@ def create_session(body: SessionCreateRequest, user: dict[str, Any] = Depends(cu
 
             cur.execute(
                 """INSERT INTO table_sessions
-                   (store_id, table_id, customer_count, started_at, status,
+                   (store_id, table_id, business_date, customer_count, started_at, status,
                     created_by_user_id, idempotency_key)
-                   VALUES (%s,%s,%s,COALESCE(%s,UTC_TIMESTAMP(3)),'open',%s,%s)""",
-                (store_id, body.table_id, body.customer_count, body.started_at,
-                 user["user_id"], body.idempotency_key),
+                   VALUES (%s,%s,%s,%s,COALESCE(%s,UTC_TIMESTAMP(3)),'open',%s,%s)""",
+                (store_id, body.table_id, current_business_date(cur,store_id,body.started_at),
+                 body.customer_count, body.started_at, user["user_id"], body.idempotency_key),
             )
             session_id = cur.lastrowid
             cur.execute("UPDATE tables SET status='occupied' WHERE store_id=%s AND id=%s",
@@ -634,7 +637,7 @@ def get_cast_payroll(cast_id: int, business_date: str,
                      JOIN orders o ON o.store_id=oi.store_id AND o.id=oi.order_id
                      JOIN table_sessions ts ON ts.store_id=o.store_id AND ts.id=o.session_id
                     WHERE a.store_id=%s AND a.cast_id=%s AND a.status='active'
-                      AND DATE(ts.started_at)=%s""",
+                      AND ts.business_date=%s""",
                 (user["store_id"], cast_id, business_date),
             )
             back_total = Decimal(str(cur.fetchone()["back_total"] or 0))
@@ -893,7 +896,7 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
 
             cur.execute(
                 """SELECT id,table_id FROM table_sessions
-                    WHERE store_id=%s AND DATE(started_at)=%s
+                    WHERE store_id=%s AND business_date=%s
                       AND status IN ('open','checkout') FOR UPDATE""",
                 (store_id, body.business_date),
             )
@@ -940,7 +943,7 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                           COALESCE(SUM(CASE WHEN p.payment_method NOT IN ('cash','credit_card') THEN p.amount ELSE 0 END),0) AS other_total
                      FROM payments p JOIN table_sessions s
                        ON s.store_id=p.store_id AND s.id=p.session_id
-                    WHERE p.store_id=%s AND DATE(s.started_at)=%s AND p.status IN ('completed','refunded')""",
+                    WHERE p.store_id=%s AND s.business_date=%s AND p.status IN ('completed','refunded')""",
                 (store_id, body.business_date),
             )
             sales = cur.fetchone()
@@ -972,16 +975,18 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 """SELECT COALESCE(SUM(oi.quantity * oi.unit_price_snapshot),0) AS items
                      FROM orders o JOIN order_items oi
                        ON oi.store_id=o.store_id AND oi.order_id=o.id
-                    WHERE o.store_id=%s AND DATE(o.ordered_at)=%s
+                     JOIN table_sessions s ON s.store_id=o.store_id AND s.id=o.session_id
+                    WHERE o.store_id=%s AND s.business_date=%s
                       AND o.status='confirmed' AND oi.status='active'""",
                 (store_id, body.business_date),
             )
             item_sales = Decimal(str(cur.fetchone()["items"] or 0))
             cur.execute(
-                """SELECT COALESCE(SUM(price_snapshot),0) AS sets
-                     FROM session_set_items
-                    WHERE store_id=%s AND DATE(started_at)=%s
-                      AND status IN ('active','completed')""",
+                """SELECT COALESCE(SUM(si.price_snapshot),0) AS sets
+                     FROM session_set_items si
+                     JOIN table_sessions s ON s.store_id=si.store_id AND s.id=si.session_id
+                    WHERE si.store_id=%s AND s.business_date=%s
+                      AND si.status IN ('active','completed')""",
                 (store_id, body.business_date),
             )
             set_sales = Decimal(str(cur.fetchone()["sets"] or 0))
