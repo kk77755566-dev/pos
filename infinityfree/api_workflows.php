@@ -200,6 +200,9 @@ if ($route === 'closings/run') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'日締め権限がありません']);
     $date=(string)($d['business_date']??'');$dt=DateTimeImmutable::createFromFormat('!Y-m-d',$date);if(!$dt||$dt->format('Y-m-d')!==$date)respond(422,['error'=>'営業日が不正です']);
     $wfdb->beginTransaction();
+    $q=$wfdb->prepare('SELECT id FROM table_sessions WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$q->fetchAll();
+    $q=$wfdb->prepare('SELECT id FROM attendance WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$q->fetchAll();
+    $q=$wfdb->prepare('SELECT id FROM payroll_details WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$q->fetchAll();
     $q=$wfdb->prepare('SELECT id,status FROM daily_closings WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$cl=$q->fetch();
     if($cl&&$cl['status']==='closed'){$wfdb->rollBack();respond(409,['error'=>'締め済みです']);}
     $errors=[];
