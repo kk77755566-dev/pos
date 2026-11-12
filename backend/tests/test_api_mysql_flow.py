@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone\nfrom decimal import Decimal
 
 from fastapi.testclient import TestClient
 
@@ -66,6 +66,12 @@ def test_basic_pos_flow_with_mysql():
     })
     assert payment.status_code == 200, payment.text
     assert payment.json()["session_status"] == "closed"
+    refund = client.post(f"/api/payments/{payment.json()['payment_id']}/refund", json={
+        "amount": "500", "reason": "CI partial refund",
+        "idempotency_key": "ci-refund-key-0001"
+    })
+    assert refund.status_code == 200, refund.text
+    assert refund.json()["remaining_refundable"] == str(Decimal(bill.json()["total"]) - Decimal("500.00"))
 
     business_date = datetime.now(timezone.utc).date().isoformat()
     clock_in = client.post("/api/attendance/clock-in", json={
