@@ -76,6 +76,37 @@ if (preg_match('#^casts/([0-9]+)/payroll/confirm$#',$route,$m)) {
     else{$wfdb->prepare("INSERT INTO payroll_details(store_id,cast_id,business_date,work_minutes_raw,work_minutes_payable,rounding_minutes_snapshot,rounding_mode_snapshot,hourly_wage_snapshot,hourly_pay,back_pay,total_pay,status) VALUES(?,?,?,?,?,?,?,?,?,?,?,'confirmed')")->execute([$store,$cast,$date,$raw,$paymins,$unit,$s['work_rounding_mode'],$hourly,$hourpay,$back,$total]);$pid=(int)$wfdb->lastInsertId();}
     respond(200,['payroll_id'=>$pid,'raw_minutes'=>$raw,'payable_minutes'=>$paymins,'hourly_pay'=>$hourpay,'back_pay'=>$back,'total_pay'=>$total,'status'=>'confirmed']);
 }
+if ($route === 'payments') {
+    $sid=(int)($d['session_id']??0);$amount=round((float)($d['amount']??0),2);$method=(string)($d['payment_method']??'');$key=idempotency($d);
+    if($sid<1||$amount<=0||!in_array($method,['cash','credit_card','qr','electronic_money','transfer','other'],true))respond(422,['error'=>'決済情報が不正です']);
+    $wfdb->beginTransaction();$q=$wfdb->prepare("SELECT id,table_id,status FROM table_sessions WHERE store_id=? AND id=? FOR UPDATE");$q->execute([$store,$sid]);$s=$q->fetch();
+    if(!$s||!in_array($s['status'],['open','checkout'],true)){$wfdb->rollBack();respond(409,['error'=>'会計可能な卓ではありません']);}
+    $q=$wfdb->prepare('SELECT id FROM payments WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['payment_id'=>(int)$old['id'],'replayed'=>true]);}
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
+    $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
+    $sub=$items+$sets;$basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$sub);
+    $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
+    $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);$tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
+    $total=round($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),2);
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
+    if($amount>$total-$paid+0.001){$wfdb->rollBack();respond(422,['error'=>'請求残額を超える入金です']);}
+    $q=$wfdb->prepare("INSERT INTO payments(store_id,session_id,payment_method,amount,status,idempotency_key,paid_at,created_by_user_id) VALUES(?,?,?,?,'completed',?,UTC_TIMESTAMP(3),?)");$q->execute([$store,$sid,$method,$amount,$key,(int)$u['id']]);$pid=(int)$wfdb->lastInsertId();$newPaid=$paid+$amount;$closed=$newPaid>=$total-0.001;
+    if($closed){$wfdb->prepare("UPDATE table_sessions SET status='closed',ended_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$store,$sid]);$wfdb->prepare("UPDATE tables SET status='available' WHERE store_id=? AND id=?")->execute([$store,$s['table_id']]);}
+    else{$wfdb->prepare("UPDATE table_sessions SET status='checkout' WHERE store_id=? AND id=?")->execute([$store,$sid]);$wfdb->prepare("UPDATE tables SET status='checkout' WHERE store_id=? AND id=?")->execute([$store,$s['table_id']]);}
+    $wfdb->commit();respond(201,['payment_id'=>$pid,'bill_total'=>$total,'paid_total'=>$newPaid,'balance'=>max(0,$total-$newPaid),'session_closed'=>$closed]);
+}
+if (preg_match('#^payments/([0-9]+)/refund$#',$route,$m)) {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'返金権限がありません']);
+    $pid=(int)$m[1];$amount=round((float)($d['amount']??0),2);$reason=trim((string)($d['reason']??''));$key=idempotency($d);
+    if($amount<=0||$reason==='')respond(422,['error'=>'返金額と理由が必要です']);
+    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id,amount,business_date FROM payments WHERE store_id=? AND id=? FOR UPDATE');$q->execute([$store,$pid]);$p=$q->fetch();if(!$p){$wfdb->rollBack();respond(404,['error'=>'決済が見つかりません']);}
+    $q=$wfdb->prepare('SELECT id FROM payment_refunds WHERE store_id=? AND idempotency_key=?');$q->execute([$store,$key]);if($old=$q->fetch()){$wfdb->commit();respond(200,['refund_id'=>(int)$old['id'],'replayed'=>true]);}
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM payment_refunds WHERE store_id=? AND payment_id=?');$q->execute([$store,$pid]);$already=(float)$q->fetchColumn();if($amount>(float)$p['amount']-$already+0.001){$wfdb->rollBack();respond(422,['error'=>'返金可能額を超えています']);}
+    $wfdb->prepare('INSERT INTO payment_refunds(store_id,payment_id,business_date,amount,reason,refunded_at,created_by_user_id,idempotency_key) VALUES(?,?,?,?,?,UTC_TIMESTAMP(3),?,?)')->execute([$store,$pid,$p['business_date'],$amount,$reason,(int)$u['id'],$key]);$rid=(int)$wfdb->lastInsertId();
+    if($already+$amount>=(float)$p['amount']-0.001)$wfdb->prepare("UPDATE payments SET status='refunded' WHERE store_id=? AND id=?")->execute([$store,$pid]);
+    $wfdb->commit();respond(201,['refund_id'=>$rid,'refunded_total'=>$already+$amount]);
+}
 if ($route === 'closings/run') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'日締め権限がありません']);
     $date=(string)($d['business_date']??'');if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date))respond(422,['error'=>'営業日が不正です']);
