@@ -24,9 +24,9 @@ function posCalculateSessionBill(PDO $db, int $store, int $sid, array $cfg): arr
     return ['items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'service'=>$service,'tax'=>$tax,'total'=>$total];
 }
 function posGetSessionBill(PDO $db, int $store, int $sid): array {
-    $q=$db->prepare('SELECT items_subtotal,sets_subtotal,subtotal,service_amount service,tax_amount tax,total_amount total,settings_snapshot FROM session_charge_snapshots WHERE store_id=? AND session_id=?');
+    $q=$db->prepare('SELECT items_subtotal,sets_subtotal,subtotal,service_amount service,tax_amount tax,total_amount total FROM session_charge_snapshots WHERE store_id=? AND session_id=?');
     $q->execute([$store,$sid]); $saved=$q->fetch();
-    if($saved){$saved['snapshot_locked']=true;return $saved;}
+    if($saved){foreach(['items_subtotal','sets_subtotal','subtotal','service','tax','total'] as $key)$saved[$key]=(float)$saved[$key];$saved['snapshot_locked']=true;return $saved;}
     $q=$db->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
     $bill=posCalculateSessionBill($db,$store,$sid,$cfg);$bill['snapshot_locked']=false;return $bill;
 }
