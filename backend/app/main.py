@@ -739,7 +739,7 @@ def get_session_bill(session_id: int, user: dict[str, Any] = Depends(current_use
                 raise HTTPException(status_code=404, detail="Session not found")
             bill = session_bill(cur, user["store_id"], session_id)
             cur.execute(
-                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                """SELECT COALESCE(SUM(p.amount),0) AS paid
                      FROM payments p
                      LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
                                   FROM payment_refunds GROUP BY store_id,payment_id) r
@@ -784,7 +784,7 @@ def register_payment(body: PaymentRequest, user: dict[str, Any] = Depends(curren
 
             bill = session_bill(cur, store_id, body.session_id)
             cur.execute(
-                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                """SELECT COALESCE(SUM(p.amount),0) AS paid
                      FROM payments p
                      LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
                                   FROM payment_refunds GROUP BY store_id,payment_id) r
@@ -980,7 +980,7 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 service_total += bill["service"]
                 tax_total += bill["tax"]
                 cur.execute(
-                    """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                    """SELECT COALESCE(SUM(p.amount),0) AS paid
                          FROM payments p
                          LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
                                       FROM payment_refunds GROUP BY store_id,payment_id) r
