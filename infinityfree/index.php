@@ -111,7 +111,7 @@ unset($_SESSION['flash']);
 ?>
 <!doctype html>
 <html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>Girls Bar POS</title>
+<meta name="robots" content="noindex,nofollow"><title>Girls Bar POS</title><link rel="stylesheet" href="pos.css?v=1">
 <style>
 :root{font-family:system-ui,-apple-system,"Noto Sans JP",sans-serif;color:#20242b;background:#f3f5f8}
 *{box-sizing:border-box}body{margin:0}.wrap{max-width:1100px;margin:auto;padding:18px}
@@ -136,10 +136,37 @@ button{background:#202b3c;color:#fff;border:0;font-weight:650;cursor:pointer}
 <button type="submit">ログイン</button></form><p class="muted">店舗管理者から発行されたアカウントでログインしてください。</p>
 </section>
 <?php else: ?>
-<section class="panel"><h2><?=h($user['display_name'])?> さん</h2><p class="muted">店舗ID: <?=h($user['store_id'])?> / 権限: <?=h($user['role_code'])?></p>
-<h2>卓一覧</h2><div class="grid">
-<?php foreach ($tables as $t): ?><button class="table <?=h($t['status'])?>" type="button"><?=h($t['table_name'])?>&#10;<?=h($t['status'])?><?= $t['session_id'] ? '&#10;Session #'.h($t['session_id']) : '' ?></button><?php endforeach; ?>
-<?php if (!$tables): ?><p class="muted">卓が登録されていません。初期マスター登録が必要です。</p><?php endif; ?>
+<section class="panel"><h2><?=h($user['display_name'])?> さん / POS</h2><p class="muted">店舗ID <?=h($user['store_id'])?> ・ <?=h($user['role_code'])?></p><div id="tables" class="tables"></div><button id="refresh" class="secondary">最新状態に更新</button></section>
+<section class="panel"><h2>着席・セット・注文</h2><div class="grid">
+<div><label>卓ID（空席を選択）</label><input id="tableid" type="number" min="1"><label>人数</label><input id="people" type="number" min="1" value="1"><button id="seat">着席開始</button></div>
+<div><label>営業セッションID</label><input id="session" type="number"><label>セット・延長</label><select id="setmenu"></select><button id="addset">セットを登録</button></div>
+<div><label>注文セッションID</label><input id="ordersession" type="number"><label>商品</label><select id="product"></select><label>数量</label><input id="qty" type="number" min="0.001" step="0.001" value="1"></div>
+<div><label>バック配分先（複数選択可）</label><select id="cast" multiple size="4"></select><p class="muted">選択したキャストへ均等配分します。配分合計は100%以内です。</p><button id="order">注文登録</button></div>
+</div></section>
+<section class="panel"><h2>会計・返金</h2><div class="grid">
+<div><label>セッションID</label><input id="billsession" type="number"><button id="bill" class="secondary">会計金額を確認</button></div>
+<div><label>決済方法</label><select id="method"><option value="cash">現金</option><option value="credit_card">クレジットカード</option><option value="qr">QR決済</option><option value="electronic_money">電子マネー</option><option value="transfer">振込</option><option value="other">その他</option></select><label>支払額</label><input id="payamount" type="number" min="0.01" step="0.01"><button id="pay">入金登録</button></div>
+<div><label>決済ID</label><input id="paymentid" type="number"><label>返金額</label><input id="refundamount" type="number" min="0.01" step="0.01"><label>返金理由</label><input id="refundreason" maxlength="500"><button id="refund">返金登録</button></div>
+</div></section>
+<section class="panel"><h2>キャスト勤怠・給与</h2><div class="grid">
+<div><label>出勤・退勤キャスト</label><select id="attcast"></select><button id="clockin">出勤登録</button><button id="clockout" class="secondary">退勤登録</button></div>
+<div><label>給与対象日</label><input id="paydate" type="date"><label>給与確定キャスト</label><select id="paycast"></select><button id="confirmPayroll">給与計算・確定</button></div>
+</div></section>
+<section class="panel"><h2>日締め</h2><div class="row"><div style="flex:1"><label>営業日</label><input id="closedate" type="date"></div><button id="close">日締め実行</button></div><p class="muted">未精算卓・退勤漏れ・未確定給与・入金差異があれば締め処理を停止します。</p></section>
+<section class="panel"><h2>店舗設定</h2><div class="grid">
+<div><label><input id="taxenabled" type="checkbox"> 消費税を有効</label><label>税率（%）</label><input id="taxrate" type="number" min="0" max="100" step="0.01"><label>税方式</label><select id="taxmode"><option value="exclusive">外税</option><option value="inclusive">内税</option></select></div>
+<div><label><input id="serviceenabled" type="checkbox"> サービス料を有効</label><label>方式</label><select id="servicemode"><option value="rate">率</option><option value="fixed">固定額</option></select><label>率（%）</label><input id="servicerate" type="number" min="0" max="100" step="0.01"><label>固定額</label><input id="servicefixed" type="number" min="0"><label>対象</label><select id="servicebasis"><option value="sets_only">セットのみ</option><option value="items_only">商品だけ</option><option value="all_subtotal">全小計</option></select><label><input id="servicetaxable" type="checkbox"> サービス料に課税</label></div>
+<div><label>勤務時間の丸め（分）</label><select id="roundminutes"><option>1</option><option>5</option><option>10</option><option>15</option><option>30</option><option>60</option></select><label>丸め方法</label><select id="roundmode"><option value="floor">切り捨て</option><option value="half_up">四捨五入</option><option value="ceil">切り上げ</option></select><button id="savesettings">設定保存</button></div>
+</div></section>
+<section class="panel"><h2>マスター登録・変更</h2><div class="grid">
+<div><h3>卓</h3><label>新規卓名</label><input id="newtable"><label>定員</label><input id="capacity" type="number" min="1" value="4"><button id="addtable">卓を追加</button><label>変更する卓</label><select id="edittable"></select><input id="edittablename"><button id="updatetable">卓名変更</button><button id="stopTable" class="secondary">卓を利用停止</button></div>
+<div><h3>商品</h3><label>商品名</label><input id="newproduct"><label>販売価格</label><input id="newprice" type="number" min="0"><label>バック率・単価</label><input id="newback" type="number" min="0"><label>バック方式</label><select id="newbacktype"><option value="percentage">売上％</option><option value="fixed_per_unit">数量あたり固定額</option><option value="none">バックなし</option></select><button id="addproduct">商品を追加</button><label>変更する商品</label><select id="editproduct"></select><input id="editproductname" placeholder="商品名"><input id="editproductprice" type="number" placeholder="価格"><input id="editproductback" type="number" placeholder="バック値"><select id="editproducttype"><option value="percentage">売上％</option><option value="fixed_per_unit">数量あたり固定額</option><option value="none">なし</option></select><button id="updateproduct">商品を更新</button><button id="stopproduct" class="secondary">商品を利用停止</button></div>
+<div><h3>セット・延長</h3><label>セット名</label><input id="newset"><label>時間（分）</label><input id="newduration" type="number" min="1" value="60"><label>料金</label><input id="newsetprice" type="number" min="0"><label><input id="extension" type="checkbox"> 延長メニュー</label><button id="addmasterset">セットを追加</button><label>変更するセット</label><select id="editset"></select><input id="editsetname"><input id="editsetduration" type="number" min="1"><input id="editsetprice" type="number" min="0"><label><input id="editextension" type="checkbox"> 延長メニュー</label><button id="updateset">セットを更新</button><button id="stopset" class="secondary">セットを利用停止</button></div>
+<div><h3>キャスト</h3><label>コード</label><input id="newcastcode"><label>名前</label><input id="newcastname"><label>時給</label><input id="newwage" type="number" min="0"><button id="addcast">キャストを追加</button><label>変更するキャスト</label><select id="editcast"></select><input id="editcastcode"><input id="editcastname"><input id="editcastwage" type="number" min="0"><button id="updatecast">キャストを更新</button><button id="stopcast" class="secondary">キャストを利用停止</button></div>
+</div><p class="muted">利用停止は過去の履歴を削除しません。過去の給与・売上の訂正は別途管理者操作として実装予定です。</p></section>
+<div id="message" class="status">接続しています…</div>
+<script src="pos.js?v=1" defer></script>
+<?php endif; ?>
 </div></section>
 <section class="panel"><h2>現在の公開準備版</h2><p>ログインと店舗別の卓一覧を確認できます。注文・会計・勤怠・給与・日締めはPHP版への移植・検証後に有効化します。</p></section>
 <?php endif; ?>
