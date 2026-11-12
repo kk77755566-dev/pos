@@ -1,8 +1,4 @@
-"""Initial API foundation for Girls Bar POS.
-
-This module deliberately starts with health, login and table-list endpoints.
-Business writes are added only after database integration tests are available.
-"""
+"""Girls Bar POS API: authentication, store-scoped POS, payroll and closing."""
 from __future__ import annotations
 
 import os
@@ -49,6 +45,20 @@ if allowed_origins:
         allow_headers=["Authorization", "Content-Type"],
     )
 bearer = HTTPBearer(auto_error=False)
+
+
+@app.on_event("startup")
+def validate_runtime_configuration():
+    if APP_ENV.lower() == "production":
+        missing = []
+        if len(JWT_SECRET) < 32:
+            missing.append("JWT_SECRET (32+ characters)")
+        if not DB_CONFIG["user"] or not DB_CONFIG["password"]:
+            missing.append("DB_USER/DB_PASSWORD")
+        if not allowed_origins or any(not origin.startswith("https://") for origin in allowed_origins):
+            missing.append("CORS_ORIGINS (explicit HTTPS origins)")
+        if missing:
+            raise RuntimeError("Production configuration is incomplete: " + ", ".join(missing))
 
 
 def db_connection():
