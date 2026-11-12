@@ -153,6 +153,43 @@ attendance = api("attendance")["data"]
 assert attendance and attendance[0]["clock_out_at"]
 business_date = attendance[0]["business_date"]
 api(f"casts/1/payroll/confirm?business_date={business_date}", "POST", {}, 200)
+
+# Cast accounts can see only their own attendance/payroll and clock themselves in/out.
+cast_jar = http.cookiejar.CookieJar()
+cast_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cast_jar))
+def cast_request(path, method="GET", data=None, form=False, csrf=None, expected=200):
+    headers = {"Accept": "application/json"}
+    payload = None
+    if data is not None:
+        payload = urllib.parse.urlencode(data).encode() if form else json.dumps(data).encode()
+        headers["Content-Type"] = "application/x-www-form-urlencoded" if form else "application/json"
+    if csrf and method != "GET":
+        headers["X-CSRF-Token"] = csrf
+    req = urllib.request.Request(BASE + path, data=payload, headers=headers, method=method)
+    try:
+        with cast_opener.open(req) as response:
+            status, raw = response.status, response.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    result = json.loads(raw.decode() or "{}")
+    if status != expected:
+        raise AssertionError(f"cast {method} {path}: expected {expected}, got {status}: {result}")
+    return result
+
+cast_csrf = cast_request("api.php?r=csrf")["csrf"]
+cast_request("index.php", "POST", {
+    "_csrf": cast_csrf, "action": "login", "store_code": "CI-POS-TEST",
+    "login_id": "castc", "password": "ci-cast-password-123"
+}, form=True, expected=200)
+cast_csrf = cast_request("api.php?r=csrf")["csrf"]
+cast_request("api.php?r=cast/clock-in", "POST", {}, csrf=cast_csrf)
+cast_request("api.php?r=cast/clock-out", "POST", {}, csrf=cast_csrf)
+api(f"casts/{new_cast}/payroll/confirm?business_date={business_date}", "POST", {}, 200)
+cast_home = cast_request("api.php?r=cast/me")
+assert cast_home["cast_id"] == new_cast
+assert cast_home["attendance"] and cast_home["attendance"][0]["clock_out_at"]
+assert cast_home["payroll"] and cast_home["payroll"][0]["status"] == "confirmed"
+
 api("expenses", "POST", {"business_date": business_date, "category": "CI", "amount": 200, "description": "test"}, 201)
 closing = api("closings/run", "POST", {"business_date": business_date}, 200)
 assert closing["status"] == "closed" and abs(float(closing["difference"])) < 0.01
