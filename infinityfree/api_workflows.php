@@ -49,6 +49,11 @@ if ($method === 'GET' && $route === 'payroll') {
     $q->execute([$store,$date]);respond(200,['data'=>$q->fetchAll()]);
 }
 if (!in_array($method,['POST','PUT'],true)) return;
+$workflowWrite = in_array($route,['settings','tables','products','sets','casts','payments','expenses','attendance/clock-in','attendance/clock-out','closings/run'],true)
+    || preg_match('#^(tables|products|sets|casts)/[0-9]+$#',$route)
+    || preg_match('#^payments/[0-9]+/refund$#',$route)
+    || preg_match('#^casts/[0-9]+/payroll/confirm$#',$route);
+if (!$workflowWrite) return;
 csrf(); staff($u); $d=input();
 
 /* Master data CRUD: create and update only; delete is always a soft-disable. */
