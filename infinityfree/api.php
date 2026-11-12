@@ -77,7 +77,7 @@ try {
         if (!isset($queries[$route])) respond(404,['error'=>'APIルートがありません']);
         $q=pdo()->prepare($queries[$route][0]); $q->execute([$store]); respond(200,['data'=>$q->fetchAll()]);
     }
-    if ($method!=='POST') respond(405,['error'=>'Method not allowed']);
+    if (!in_array($method,['POST','PUT'],true)) respond(405,['error'=>'Method not allowed']);
     csrf(); staff($u); $data=input(); $db=pdo();
 
     if ($route==='sessions') {
