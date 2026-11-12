@@ -50,7 +50,7 @@ label{display:block;font-size:13px;color:#5e5668;margin-bottom:5px}
 const $=id=>document.getElementById(id);let token="",master={products:[],sets:[],casts:[]};
 let apiBase=localStorage.getItem("girlsbar_api")||location.origin;
 $("apiurl").value=apiBase;
-$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
+$("apiurl").onchange=()=>{apiBase=$("apiurl").value.replace(/\/$/,"");localStorage.setItem("girlsbar_api",apiBase)};
 function key(){return crypto.randomUUID()}
 async function api(path,method="GET",body=null){
  const res=await fetch(apiBase+path,{method,headers:{"Content-Type":"application/json",...(token?{Authorization:"Bearer "+token}:{})},...(body?{body:JSON.stringify(body)}:{})});
