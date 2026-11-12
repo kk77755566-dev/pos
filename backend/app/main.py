@@ -888,6 +888,24 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
             ])
 
             cur.execute(
+                """SELECT DISTINCT a.cast_id
+                     FROM attendance a
+                    WHERE a.store_id=%s AND a.business_date=%s
+                      AND NOT EXISTS (
+                        SELECT 1 FROM payroll_details p
+                         WHERE p.store_id=a.store_id AND p.cast_id=a.cast_id
+                           AND p.business_date=a.business_date
+                           AND p.status IN ('confirmed','paid')
+                      )""",
+                (store_id, body.business_date),
+            )
+            missing_payroll = cur.fetchall()
+            errors.extend([
+                {"code": "PAYROLL_NOT_CONFIRMED", "description": f"給与未確定のキャスト ID={p['cast_id']}", "type": "cast", "id": p["cast_id"]}
+                for p in missing_payroll
+            ])
+
+            cur.execute(
                 """SELECT COALESCE(SUM(amount),0) AS total,
                           COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END),0) AS cash_total,
                           COALESCE(SUM(CASE WHEN payment_method='credit_card' THEN amount ELSE 0 END),0) AS card_total,
