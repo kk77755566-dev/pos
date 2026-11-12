@@ -10,6 +10,27 @@ function posRoundTotal(float $amount, string $mode): float {
     };
 }
 
+function posCalculateSessionBill(PDO $db, int $store, int $sid, array $cfg): array {
+    $q=$db->prepare("SELECT COALESCE(SUM(oi.quantity*oi.unit_price_snapshot),0) FROM orders o JOIN order_items oi ON oi.store_id=o.store_id AND oi.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND oi.status='active'");
+    $q->execute([$store,$sid]); $items=(float)$q->fetchColumn();
+    $q=$db->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");
+    $q->execute([$store,$sid]); $sets=(float)$q->fetchColumn();
+    $subtotal=$items+$sets;
+    $basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$subtotal);
+    $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)($cfg['service_fixed_amount']??0):round($basis*(float)($cfg['service_rate']??0)/100,2));
+    $taxBase=$subtotal+(!empty($cfg['service_taxable'])?$service:0);
+    $tax=empty($cfg['tax_enabled'])?0:round((($cfg['tax_mode']??'exclusive')==='inclusive'?$taxBase-$taxBase/(1+(float)($cfg['tax_rate']??0)/100):$taxBase*(float)($cfg['tax_rate']??0)/100),2);
+    $total=posRoundTotal($subtotal+$service+((($cfg['tax_mode']??'exclusive')==='inclusive')?0:$tax),(string)($cfg['rounding_mode']??'floor'));
+    return ['items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'service'=>$service,'tax'=>$tax,'total'=>$total];
+}
+function posGetSessionBill(PDO $db, int $store, int $sid): array {
+    $q=$db->prepare('SELECT items_subtotal,sets_subtotal,subtotal,service_amount service,tax_amount tax,total_amount total,settings_snapshot FROM session_charge_snapshots WHERE store_id=? AND session_id=?');
+    $q->execute([$store,$sid]); $saved=$q->fetch();
+    if($saved){$saved['snapshot_locked']=true;return $saved;}
+    $q=$db->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
+    $bill=posCalculateSessionBill($db,$store,$sid,$cfg);$bill['snapshot_locked']=false;return $bill;
+}
+
 /* Store-scoped master-data maintenance. Soft-disable preserves historical snapshots. */
 if ($method === 'GET' && $route === 'expenses') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
@@ -31,18 +52,9 @@ if ($method === 'GET' && preg_match('#^sessions/([0-9]+)/bill$#',$route,$m)) {
     $sid=(int)$m[1];
     $q=$wfdb->prepare('SELECT id,status FROM table_sessions WHERE store_id=? AND id=?'); $q->execute([$store,$sid]); $session=$q->fetch();
     if(!$session) respond(404,['error'=>'卓が見つかりません']);
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(oi.quantity*oi.unit_price_snapshot),0) FROM orders o JOIN order_items oi ON oi.store_id=o.store_id AND oi.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND oi.status='active'");
-    $q->execute([$store,$sid]); $items=(float)$q->fetchColumn();
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");
-    $q->execute([$store,$sid]); $sets=(float)$q->fetchColumn();
-    $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
-    $subtotal=$items+$sets; $basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$subtotal);
-    $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
-    $taxBase=$subtotal+(!empty($cfg['service_taxable'])?$service:0);
-    $tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-    $total=posRoundTotal($subtotal+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
+    $bill=posGetSessionBill($wfdb,$store,$sid);
     $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND session_id=? AND status='completed'");$q->execute([$store,$sid]);$paid=(float)$q->fetchColumn();
-    respond(200,['session_id'=>$sid,'status'=>$session['status'],'items_subtotal'=>$items,'sets_subtotal'=>$sets,'subtotal'=>$subtotal,'service'=>$service,'tax'=>$tax,'total'=>$total,'paid'=>$paid,'balance'=>max(0,round($total-$paid,2))]);
+    respond(200,['session_id'=>$sid,'status'=>$session['status']]+$bill+['paid'=>$paid,'balance'=>max(0,round((float)$bill['total']-$paid,2))]);
 }
 if ($method === 'GET' && $route === 'attendance') {
     staff($u);$date=(string)($_GET['business_date']??businessDate($wfdb,$store));
