@@ -230,7 +230,7 @@ if ($route === 'closings/run') {
         $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
         $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);
         $tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-        $total=round($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),2);
+        $total=posRoundTotal($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
         $subtotal+=$sub;$serviceTotal+=$service;$taxTotal+=$tax;$salesTotal+=$total;
     }
     $q=$wfdb->prepare('SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.status IN ("completed","refunded")');$q->execute([$store,$date]);$paidGross=(float)$q->fetchColumn();
