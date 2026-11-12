@@ -699,12 +699,13 @@ def session_bill(cur, store_id: int, session_id: int):
     taxable = subtotal + (service if settings["service_taxable"] else Decimal("0"))
     if settings["tax_enabled"]:
         rate = Decimal(str(settings["tax_rate"]))
+        non_taxable_service = service if not settings["service_taxable"] else Decimal("0")
         if settings["tax_mode"] == "exclusive":
             tax = money(taxable * rate / Decimal("100"))
-            total = taxable + tax
+            total = taxable + tax + non_taxable_service
         else:
             tax = money(taxable * rate / (Decimal("100") + rate)) if rate else Decimal("0")
-            total = taxable
+            total = taxable + non_taxable_service
     else:
         tax = Decimal("0.00")
         total = subtotal + service
