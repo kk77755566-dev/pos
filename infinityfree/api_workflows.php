@@ -238,13 +238,8 @@ if ($route === 'closings/run') {
     $subtotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
     foreach($sessions as $session){
         $sid=(int)$session['id'];
-        $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
-        $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
-        $sub=$items+$sets;$basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$sub);
-        $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
-        $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);
-        $tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
-        $total=posRoundTotal($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),(string)($cfg['rounding_mode']??'floor'));
+        $bill=posGetSessionBill($wfdb,$store,$sid);
+        $sub=(float)$bill['subtotal'];$service=(float)$bill['service'];$tax=(float)$bill['tax'];$total=(float)$bill['total'];
         $subtotal+=$sub;$serviceTotal+=$service;$taxTotal+=$tax;$salesTotal+=$total;
     }
     $q=$wfdb->prepare('SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.status IN ("completed","refunded")');$q->execute([$store,$date]);$paidGross=(float)$q->fetchColumn();
