@@ -24,7 +24,7 @@
 - Cast attendance clock-in/out and provisional hourly-pay/back aggregation.
 - Daily closing run and closing-result inspection. Closing is blocked when open sessions, missing clock-outs, or closed-session payment mismatches are found.
 - Daily closing is currently invoked through the API; an automatic scheduled trigger and store-local business-day timezone handling are not yet configured.
-- Cancellation/refund/reversal, full master-data management UI, and production deployment remain incomplete.
+- Unpaid order cancellation with audit trail is implemented. Paid-order refund/reversal remains incomplete and must not be handled by manually changing payment rows. Master-data write screens, payroll finalization, automated scheduled close, and production deployment remain incomplete.\n- A first responsive operator UI is available at `frontend/index.html`; it supports login, table list, session start, set registration, order entry, bill preview, payment, and manual daily close. It currently uses basic controls and requires the API URL to be configured.
 - No real MySQL instance has been connected from this GitHub workflow. Schema execution and integration tests remain required before operational use.
 - Use HTTPS and a production-grade secret manager in deployment. Do not expose the database directly to client devices.
 - The initial role seed is a baseline. Before production, review permissions and add account recovery, rate limiting, CSRF protection if cookie sessions are used, and security monitoring.
@@ -33,7 +33,7 @@
 ## Current endpoints
 - `POST /api/sessions` — open a table session.
 - `POST /api/sessions/{session_id}/sets` — add a set or extension.
-- `POST /api/orders` — register order items and cast back allocations.
+- `POST /api/orders` — register order items and cast back allocations.\n- `POST /api/orders/{order_id}/cancel` — cancel an unpaid order with reason and audit log.\n- `GET /api/products`, `GET /api/set-menus`, `GET /api/casts` — store-scoped master data lists.
 - `GET /api/sessions/{session_id}/bill` — preview bill and balance.
 - `POST /api/payments` — record a payment, including split payments.
 - `POST /api/attendance/clock-in`, `POST /api/attendance/clock-out` — attendance.
@@ -42,3 +42,7 @@
 - `GET /api/closings/{business_date}` — read closing summary and blocking errors.
 
 The API is not yet a complete operational POS. Verify every SQL statement against the exact MySQL schema and test all business flows on a disposable development database before real transactions.
+
+
+## Frontend
+Open `frontend/index.html` through a static HTTPS host or local static server. Enter the backend API origin in the login panel. The API server must allow browser requests from the frontend origin (CORS configuration is not yet included in this backend slice), and HTTPS is required outside local development. Never put DB credentials in the frontend.
