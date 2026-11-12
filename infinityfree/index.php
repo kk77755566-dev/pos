@@ -24,7 +24,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'){
 }
 $user=$_SESSION['user']??null;
 ?><!doctype html>
-<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Girls Bar POS</title><link rel="stylesheet" href="pos.css?v=2"></head>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Girls Bar POS</title><link rel="stylesheet" href="pos.css?v=3"></head>
 <body><main class="wrap">
 <header><h1>Girls Bar POS</h1><?php if($user):?><form method="post"><input type="hidden" name="_csrf" value="<?=h(csrf_token())?>"><input type="hidden" name="action" value="logout"><button>ログアウト</button></form><?php endif;?></header>
 <?php if($error):?><p class="error"><?=h($error)?></p><?php endif;?>
@@ -55,6 +55,6 @@ $user=$_SESSION['user']??null;
 <div><h3>セット・延長</h3><label>セット名</label><input id="newset"><label>時間（分）</label><input id="newduration" type="number" min="1" value="60"><label>料金</label><input id="newsetprice" type="number" min="0"><label><input id="extension" type="checkbox"> 延長メニュー</label><button id="addmasterset">セットを追加</button><label>変更するセット</label><select id="editset"></select><input id="editsetname"><input id="editsetduration" type="number" min="1"><input id="editsetprice" type="number" min="0"><label><input id="editextension" type="checkbox"> 延長メニュー</label><button id="updateset">セットを更新</button><button id="stopset" class="secondary">セットを利用停止</button></div>
 <div><h3>キャスト</h3><label>コード</label><input id="newcastcode"><label>名前</label><input id="newcastname"><label>時給</label><input id="newwage" type="number" min="0"><button id="addcast">キャストを追加</button><label>変更するキャスト</label><select id="editcast"></select><input id="editcastcode"><input id="editcastname"><input id="editcastwage" type="number" min="0"><button id="updatecast">キャストを更新</button><button id="stopcast" class="secondary">キャストを利用停止</button></div>
 </div><p class="muted">利用停止は過去の履歴を削除しません。給与・売上の訂正は管理者による履歴管理が必要です。</p></section>
-<div id="message" class="status">接続しています…</div><script src="pos.js?v=2" defer></script>
+<div id="message" class="status">接続しています…</div><script src="pos.js?v=3" defer></script>
 <?php endif;?>
 </main></body></html>
