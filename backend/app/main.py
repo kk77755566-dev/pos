@@ -506,7 +506,7 @@ def add_session_set(session_id: int, body: SessionSetRequest,
 
 class ClockInRequest(BaseModel):
     cast_id: int = Field(gt=0)
-    business_date: str = Field(pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 class ClockOutRequest(BaseModel):
@@ -835,7 +835,7 @@ def register_payment(body: PaymentRequest, user: dict[str, Any] = Depends(curren
 
 
 class DailyCloseRequest(BaseModel):
-    business_date: str = Field(pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
 
 
 @app.post("/api/closings/run")
