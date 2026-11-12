@@ -1043,17 +1043,17 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
             refund_total = Decimal(str(refunds["refund_total"] or 0))\n            sales_total = Decimal(str(sales["total"] or 0)) - refund_total
             cur.execute(
                 """UPDATE daily_closings SET status=%s,
-                       sales_subtotal=%s, service_total=%s, tax_total=%s, sales_total=%s,
+                       sales_subtotal=%s, service_total=%s, tax_total=%s, sales_total=%s, refund_total=%s,
                        cash_total=%s,card_total=%s,other_total=%s,
                        payroll_total=%s,expense_total=%s,difference=%s,
                        settings_snapshot=%s,closed_at=%s
                     WHERE store_id=%s AND id=%s""",
                 ("blocked" if errors else "closed",
                  str(money(set_sales + item_sales)), str(money(service_total)),
-                 str(money(tax_total)), str(money(sales_total)),
-                 str(money(Decimal(str(sales["cash_total"] or 0)))),
-                 str(money(Decimal(str(sales["card_total"] or 0)))),
-                 str(money(Decimal(str(sales["other_total"] or 0)))),
+                 str(money(tax_total)), str(money(sales_total)), str(money(refund_total)),
+                 str(money(Decimal(str(sales["cash_total"] or 0))-Decimal(str(refunds["cash_refunds"] or 0)))),
+                 str(money(Decimal(str(sales["card_total"] or 0))-Decimal(str(refunds["card_refunds"] or 0)))),
+                 str(money(Decimal(str(sales["other_total"] or 0))-Decimal(str(refunds["other_refunds"] or 0)))),
                  str(money(payroll)), str(money(expenses)),
                  str(money(sales_total - expenses - payroll)),
                  json.dumps(snapshot, ensure_ascii=False),
