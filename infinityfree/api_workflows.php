@@ -176,25 +176,46 @@ if (preg_match('#^payments/([0-9]+)/refund$#',$route,$m)) {
 }
 if ($route === 'closings/run') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'日締め権限がありません']);
-    $date=(string)($d['business_date']??'');if(!preg_match('/^\d{4}-\d{2}-\d{2}$/',$date))respond(422,['error'=>'営業日が不正です']);
+    $date=(string)($d['business_date']??'');$dt=DateTimeImmutable::createFromFormat('!Y-m-d',$date);if(!$dt||$dt->format('Y-m-d')!==$date)respond(422,['error'=>'営業日が不正です']);
+    $wfdb->beginTransaction();
+    $q=$wfdb->prepare('SELECT id,status FROM daily_closings WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$cl=$q->fetch();
+    if($cl&&$cl['status']==='closed'){$wfdb->rollBack();respond(409,['error'=>'締め済みです']);}
+    $errors=[];
     $checks=[
       ['open_sessions',"SELECT COUNT(*) FROM table_sessions WHERE store_id=? AND business_date=? AND status IN ('open','checkout')",'未精算の卓があります'],
       ['unclocked_casts','SELECT COUNT(*) FROM attendance WHERE store_id=? AND business_date=? AND clock_out_at IS NULL','退勤未記録があります'],
-      ['unconfirmed_payroll',"SELECT COUNT(*) FROM payroll_details WHERE store_id=? AND business_date=? AND status='calculated'",'未確定給与があります']
-    ];$errors=[];
+      ['unconfirmed_payroll',"SELECT COUNT(*) FROM attendance a WHERE a.store_id=? AND a.business_date=? AND a.clock_out_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM payroll_details p WHERE p.store_id=a.store_id AND p.cast_id=a.cast_id AND p.business_date=a.business_date AND p.status IN ('confirmed','paid'))",'給与未確定のキャスト勤務があります']
+    ];
     foreach($checks as [$code,$sql,$label]){$q=$wfdb->prepare($sql);$q->execute([$store,$date]);$n=(int)$q->fetchColumn();if($n)$errors[]=['code'=>$code,'description'=>$label.' '.$n.'件'];}
-    $wfdb->beginTransaction();$q=$wfdb->prepare('SELECT id,status FROM daily_closings WHERE store_id=? AND business_date=? FOR UPDATE');$q->execute([$store,$date]);$cl=$q->fetch();
-    if($cl&&$cl['status']==='closed'){$wfdb->rollBack();respond(409,['error'=>'締め済みです']);}
-    if(!$cl){$wfdb->prepare("INSERT INTO daily_closings(store_id,business_date,status,settings_snapshot) VALUES(?,?,'pending',JSON_OBJECT())")->execute([$store,$date]);$cid=(int)$wfdb->lastInsertId();}
-    else{$cid=(int)$cl['id'];$wfdb->prepare('DELETE FROM closing_errors WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);}
+    $q=$wfdb->prepare('SELECT * FROM store_settings WHERE store_id=?');$q->execute([$store]);$cfg=$q->fetch()?:[];
+    $q=$wfdb->prepare('SELECT id FROM table_sessions WHERE store_id=? AND business_date=? AND status IN ("closed","cancelled") ORDER BY id');$q->execute([$store,$date]);$sessions=$q->fetchAll();
+    $subtotal=0.0;$serviceTotal=0.0;$taxTotal=0.0;$salesTotal=0.0;
+    foreach($sessions as $session){
+        $sid=(int)$session['id'];
+        $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND o.session_id=? AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$sid]);$items=(float)$q->fetchColumn();
+        $q=$wfdb->prepare("SELECT COALESCE(SUM(price_snapshot),0) FROM session_set_items WHERE store_id=? AND session_id=? AND status<>'cancelled'");$q->execute([$store,$sid]);$sets=(float)$q->fetchColumn();
+        $sub=$items+$sets;$basis=($cfg['service_basis']??'all_subtotal')==='sets_only'?$sets:(($cfg['service_basis']??'')==='items_only'?$items:$sub);
+        $service=empty($cfg['service_enabled'])?0:(($cfg['service_mode']??'rate')==='fixed'?(float)$cfg['service_fixed_amount']:round($basis*(float)$cfg['service_rate']/100,2));
+        $taxBase=$sub+(!empty($cfg['service_taxable'])?$service:0);
+        $tax=empty($cfg['tax_enabled'])?0:round(($cfg['tax_mode']==='inclusive'?$taxBase-$taxBase/(1+(float)$cfg['tax_rate']/100):$taxBase*(float)$cfg['tax_rate']/100),2);
+        $total=round($sub+$service+($cfg['tax_mode']==='inclusive'?0:$tax),2);
+        $subtotal+=$sub;$serviceTotal+=$service;$taxTotal+=$tax;$salesTotal+=$total;
+    }
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.status IN ("completed","refunded")');$q->execute([$store,$date]);$paidGross=(float)$q->fetchColumn();
+    $q=$wfdb->prepare('SELECT COALESCE(SUM(r.amount),0) FROM payment_refunds r WHERE r.store_id=? AND r.business_date=?');$q->execute([$store,$date]);$refund=(float)$q->fetchColumn();
+    $netPaid=round($paidGross-$refund,2);$netSales=round($salesTotal-$refund,2);$difference=round($netPaid-$netSales,2);
+    if(abs($difference)>0.01)$errors[]=['code'=>'payment_mismatch','description'=>'入金と請求の差額があります（差額 '.$difference.'円）'];
+    if(!$cl){$wfdb->prepare("INSERT INTO daily_closings(store_id,business_date,status,settings_snapshot) VALUES(?,?,'pending',?)")->execute([$store,$date,json_encode($cfg,JSON_UNESCAPED_UNICODE)]);$cid=(int)$wfdb->lastInsertId();}
+    else{$cid=(int)$cl['id'];$wfdb->prepare('DELETE FROM closing_errors WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);$wfdb->prepare('DELETE FROM daily_closing_details WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);}
     $ins=$wfdb->prepare('INSERT INTO closing_errors(store_id,daily_closing_id,error_code,description) VALUES(?,?,?,?)');foreach($errors as $e)$ins->execute([$store,$cid,$e['code'],$e['description']]);
-    if($errors){$wfdb->prepare("UPDATE daily_closings SET status='blocked',started_at=UTC_TIMESTAMP(3),closed_at=NULL WHERE store_id=? AND id=?")->execute([$store,$cid]);$wfdb->commit();respond(409,['status'=>'blocked','errors'=>$errors]);}
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(i.quantity*i.unit_price_snapshot),0) FROM orders o JOIN order_items i ON i.store_id=o.store_id AND i.order_id=o.id WHERE o.store_id=? AND EXISTS (SELECT 1 FROM table_sessions ts WHERE ts.store_id=o.store_id AND ts.id=o.session_id AND ts.business_date=?) AND o.status='confirmed' AND i.status='active'");$q->execute([$store,$date]);$sales=(float)$q->fetchColumn();
-    $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM payment_refunds WHERE store_id=? AND business_date=?');$q->execute([$store,$date]);$refund=(float)$q->fetchColumn();
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND DATE(paid_at)=? AND payment_method='cash'");$q->execute([$store,$date]);$cash=(float)$q->fetchColumn();
-    $q=$wfdb->prepare("SELECT COALESCE(SUM(amount),0) FROM payments WHERE store_id=? AND DATE(paid_at)=? AND payment_method='credit_card'");$q->execute([$store,$date]);$card=(float)$q->fetchColumn();
+    if($errors){$wfdb->prepare("UPDATE daily_closings SET status='blocked',sales_subtotal=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,difference=?,started_at=UTC_TIMESTAMP(3),closed_at=NULL WHERE store_id=? AND id=?")->execute([$subtotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$difference,$store,$cid]);$wfdb->commit();respond(409,['status'=>'blocked','closing_id'=>$cid,'errors'=>$errors,'difference'=>$difference]);}
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method='cash' AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$cash=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method='credit_card' AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$card=(float)$q->fetchColumn();
+    $q=$wfdb->prepare("SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.payment_method NOT IN ('cash','credit_card') AND p.status IN ('completed','refunded')");$q->execute([$store,$date]);$other=(float)$q->fetchColumn();
     $q=$wfdb->prepare("SELECT COALESCE(SUM(total_pay),0) FROM payroll_details WHERE store_id=? AND business_date=? AND status IN ('confirmed','paid')");$q->execute([$store,$date]);$pay=(float)$q->fetchColumn();
     $q=$wfdb->prepare('SELECT COALESCE(SUM(amount),0) FROM expenses WHERE store_id=? AND business_date=?');$q->execute([$store,$date]);$expense=(float)$q->fetchColumn();
-    $wfdb->prepare("UPDATE daily_closings SET status='closed',sales_subtotal=?,sales_total=?,refund_total=?,cash_total=?,card_total=?,payroll_total=?,expense_total=?,difference=?,started_at=UTC_TIMESTAMP(3),closed_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$sales,$sales,$refund,$cash,$card,$pay,$expense,round($cash+$card-$sales+$refund,2),$store,$cid]);
-    $wfdb->commit();respond(200,['status'=>'closed','closing_id'=>$cid,'sales_total'=>$sales,'refund_total'=>$refund,'cash_total'=>$cash,'card_total'=>$card,'payroll_total'=>$pay,'expense_total'=>$expense]);
+    $wfdb->prepare("UPDATE daily_closings SET status='closed',sales_subtotal=?,service_total=?,tax_total=?,sales_total=?,refund_total=?,cash_total=?,card_total=?,other_total=?,payroll_total=?,expense_total=?,difference=0,started_at=UTC_TIMESTAMP(3),closed_at=UTC_TIMESTAMP(3) WHERE store_id=? AND id=?")->execute([$subtotal,$serviceTotal,$taxTotal,$salesTotal,$refund,$cash,$card,$other,$pay,$expense,$store,$cid]);
+    $det=$wfdb->prepare('INSERT INTO daily_closing_details(store_id,daily_closing_id,item_type,amount,detail_json) VALUES(?,?,?,?,?)');
+    foreach([['sales_subtotal',$subtotal],['service',$serviceTotal],['tax',$taxTotal],['sales_total',$salesTotal],['refund',$refund],['cash',$cash],['card',$card],['other_payment',$other],['payroll',$pay],['expense',$expense]] as [$type,$amount])$det->execute([$store,$cid,$type,$amount,json_encode(['business_date'=>$date],JSON_UNESCAPED_UNICODE)]);
+    $wfdb->commit();respond(200,['status'=>'closed','closing_id'=>$cid,'business_date'=>$date,'sales_subtotal'=>$subtotal,'service_total'=>$serviceTotal,'tax_total'=>$taxTotal,'sales_total'=>$salesTotal,'refund_total'=>$refund,'cash_total'=>$cash,'card_total'=>$card,'other_total'=>$other,'payroll_total'=>$pay,'expense_total'=>$expense,'difference'=>0]);
 }
