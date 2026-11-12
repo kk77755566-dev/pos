@@ -101,6 +101,33 @@ api(f"payments/{payment['payment_id']}/refund", "POST", {
     "amount": 100, "reason": "CI partial refund", "idempotency_key": "ci-refund-unique-001"
 }, 201)
 
+# Verify store-configured whole-yen rounding is applied consistently to the bill.
+round_product = api("products", "POST", {
+    "product_name": "端数テスト商品", "selling_price": 333,
+    "back_rate": 0, "back_type": "none"
+}, 201)["id"]
+round_session = api("sessions", "POST", {
+    "table_id": 1, "customer_count": 1, "idempotency_key": "ci-round-session-001"
+}, 201)["data"]["session_id"]
+api("orders", "POST", {
+    "session_id": round_session, "idempotency_key": "ci-round-order-001",
+    "items": [{"product_id": round_product, "quantity": 1, "allocations": []}]
+}, 201)
+for mode, expected_total in (("floor", 366), ("half_up", 366), ("ceil", 367)):
+    api("settings", "PUT", {
+        "tax_enabled": True, "tax_rate": 10, "tax_mode": "exclusive",
+        "service_enabled": False, "service_rate": 0, "service_mode": "rate",
+        "service_fixed_amount": 0, "service_taxable": True, "service_basis": "all_subtotal",
+        "rounding_mode": mode, "work_rounding_minutes": 15, "work_rounding_mode": "floor"
+    })
+    rounded_bill = api("sessions/" + str(round_session) + "/bill")
+    assert rounded_bill["total"] == expected_total, (mode, rounded_bill)
+round_payment = api("payments", "POST", {
+    "session_id": round_session, "payment_method": "cash", "amount": 367,
+    "idempotency_key": "ci-round-payment-001"
+}, 201)
+assert round_payment["session_closed"] is True
+
 api("attendance/clock-in", "POST", {"cast_id": 1}, 200)
 api("attendance/clock-out", "POST", {"cast_id": 1}, 200)
 attendance = api("attendance")["data"]
