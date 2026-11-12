@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import uuid
+import json
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -820,5 +821,237 @@ def register_payment(body: PaymentRequest, user: dict[str, Any] = Depends(curren
     except pymysql.MySQLError:
         conn.rollback()
         raise HTTPException(status_code=503, detail="Payment could not be saved") from None
+    finally:
+        conn.close()
+
+
+class DailyCloseRequest(BaseModel):
+    business_date: str = Field(pattern=r"^\\d{4}-\\d{2}-\\d{2}$")
+
+
+@app.post("/api/closings/run")
+def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(current_user)):
+    """Close a business date only when all blocking integrity checks pass."""
+    require_management(user["role"])
+    store_id = user["store_id"]
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO daily_closings
+                   (store_id,business_date,status,settings_snapshot,started_at)
+                   VALUES (%s,%s,'processing',JSON_OBJECT(),UTC_TIMESTAMP(3))
+                   ON DUPLICATE KEY UPDATE id=LAST_INSERT_ID(id)""",
+                (store_id, body.business_date),
+            )
+            closing_id = cur.lastrowid
+            cur.execute(
+                "SELECT id,status FROM daily_closings WHERE store_id=%s AND id=%s FOR UPDATE",
+                (store_id, closing_id),
+            )
+            closing = cur.fetchone()
+            if closing["status"] == "closed":
+                conn.commit()
+                return {"closing_id": closing_id, "status": "closed", "replayed": True, "errors": []}
+
+            cur.execute(
+                "SELECT * FROM store_settings WHERE store_id=%s FOR UPDATE",
+                (store_id,),
+            )
+            settings = cur.fetchone()
+            if not settings:
+                raise HTTPException(status_code=409, detail="Store settings are missing")
+
+            cur.execute(
+                """SELECT id,table_id FROM table_sessions
+                    WHERE store_id=%s AND DATE(started_at)=%s
+                      AND status IN ('open','checkout') FOR UPDATE""",
+                (store_id, body.business_date),
+            )
+            open_sessions = cur.fetchall()
+            errors = [
+                {"code": "OPEN_SESSION", "description": f"未精算または営業中の卓セッション ID={s['id']}", "type": "table_session", "id": s["id"]}
+                for s in open_sessions
+            ]
+
+            cur.execute(
+                """SELECT id,cast_id FROM attendance
+                    WHERE store_id=%s AND business_date=%s AND clock_out_at IS NULL
+                    FOR UPDATE""",
+                (store_id, body.business_date),
+            )
+            open_attendance = cur.fetchall()
+            errors.extend([
+                {"code": "MISSING_CLOCK_OUT", "description": f"退勤未登録の出勤記録 ID={a['id']}", "type": "attendance", "id": a["id"]}
+                for a in open_attendance
+            ])
+
+            cur.execute(
+                """SELECT COALESCE(SUM(amount),0) AS total,
+                          COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END),0) AS cash_total,
+                          COALESCE(SUM(CASE WHEN payment_method='credit_card' THEN amount ELSE 0 END),0) AS card_total,
+                          COALESCE(SUM(CASE WHEN payment_method NOT IN ('cash','credit_card') THEN amount ELSE 0 END),0) AS other_total
+                     FROM payments p JOIN table_sessions s
+                       ON s.store_id=p.store_id AND s.id=p.session_id
+                    WHERE p.store_id=%s AND DATE(s.started_at)=%s AND p.status='completed'""",
+                (store_id, body.business_date),
+            )
+            sales = cur.fetchone()
+            cur.execute(
+                "SELECT COALESCE(SUM(amount),0) AS total FROM expenses WHERE store_id=%s AND business_date=%s",
+                (store_id, body.business_date),
+            )
+            expenses = Decimal(str(cur.fetchone()["total"] or 0))
+            cur.execute(
+                """SELECT COALESCE(SUM(total_pay),0) AS total
+                     FROM payroll_details
+                    WHERE store_id=%s AND business_date=%s AND status IN ('confirmed','paid')""",
+                (store_id, body.business_date),
+            )
+            payroll = Decimal(str(cur.fetchone()["total"] or 0))
+
+            cur.execute(
+                """SELECT COALESCE(SUM(oi.quantity * oi.unit_price_snapshot),0) AS items
+                     FROM orders o JOIN order_items oi
+                       ON oi.store_id=o.store_id AND oi.order_id=o.id
+                    WHERE o.store_id=%s AND DATE(o.ordered_at)=%s
+                      AND o.status='confirmed' AND oi.status='active'""",
+                (store_id, body.business_date),
+            )
+            item_sales = Decimal(str(cur.fetchone()["items"] or 0))
+            cur.execute(
+                """SELECT COALESCE(SUM(price_snapshot),0) AS sets
+                     FROM session_set_items
+                    WHERE store_id=%s AND DATE(started_at)=%s
+                      AND status IN ('active','completed')""",
+                (store_id, body.business_date),
+            )
+            set_sales = Decimal(str(cur.fetchone()["sets"] or 0))
+
+            cur.execute(
+                """SELECT id,table_id FROM table_sessions
+                    WHERE store_id=%s AND DATE(started_at)=%s AND status='closed'""",
+                (store_id, body.business_date),
+            )
+            closed_sessions = cur.fetchall()
+            for s in closed_sessions:
+                bill = session_bill(cur, store_id, s["id"])
+                cur.execute(
+                    """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
+                        WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                    (store_id, s["id"]),
+                )
+                paid = Decimal(str(cur.fetchone()["paid"] or 0))
+                if money(paid) != money(bill["total"]):
+                    errors.append({
+                        "code": "PAYMENT_MISMATCH",
+                        "description": f"会計金額と入金額が一致しません。卓セッション ID={s['id']}",
+                        "type": "table_session", "id": s["id"],
+                    })
+
+            # Remove unresolved errors from an earlier blocked attempt before recording this run.
+            cur.execute(
+                "DELETE FROM closing_errors WHERE store_id=%s AND daily_closing_id=%s",
+                (store_id, closing_id),
+            )
+            for error in errors:
+                cur.execute(
+                    """INSERT INTO closing_errors
+                       (store_id,daily_closing_id,error_code,description,reference_type,reference_id)
+                       VALUES (%s,%s,%s,%s,%s,%s)""",
+                    (store_id, closing_id, error["code"], error["description"], error["type"], error["id"]),
+                )
+
+            snapshot = {
+                "tax_enabled": bool(settings["tax_enabled"]),
+                "tax_rate": str(settings["tax_rate"]),
+                "tax_mode": settings["tax_mode"],
+                "service_enabled": bool(settings["service_enabled"]),
+                "service_rate": str(settings["service_rate"]),
+                "service_mode": settings["service_mode"],
+                "service_fixed_amount": str(settings["service_fixed_amount"]),
+                "service_taxable": bool(settings["service_taxable"]),
+                "service_basis": settings["service_basis"],
+            }
+            sales_total = Decimal(str(sales["total"] or 0))
+            cur.execute(
+                """UPDATE daily_closings SET status=%s,
+                       sales_subtotal=%s, sales_total=%s,
+                       cash_total=%s,card_total=%s,other_total=%s,
+                       payroll_total=%s,expense_total=%s,difference=%s,
+                       settings_snapshot=%s,closed_at=%s
+                    WHERE store_id=%s AND id=%s""",
+                ("blocked" if errors else "closed",
+                 str(money(set_sales + item_sales)), str(money(sales_total)),
+                 str(money(Decimal(str(sales["cash_total"] or 0)))),
+                 str(money(Decimal(str(sales["card_total"] or 0)))),
+                 str(money(Decimal(str(sales["other_total"] or 0)))),
+                 str(money(payroll)), str(money(expenses)),
+                 str(money(sales_total - expenses - payroll)),
+                 json.dumps(snapshot, ensure_ascii=False),
+                 None if errors else datetime.now(timezone.utc).replace(tzinfo=None),
+                 store_id, closing_id),
+            )
+            cur.execute(
+                """INSERT INTO audit_logs
+                   (store_id,user_id,action,target_type,target_id,after_json)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (store_id, user["user_id"], "daily_close_blocked" if errors else "daily_close_confirmed",
+                 "daily_closing", closing_id,
+                 json.dumps({"business_date": body.business_date, "errors": len(errors)}, ensure_ascii=False)),
+            )
+            conn.commit()
+            return {
+                "closing_id": closing_id,
+                "business_date": body.business_date,
+                "status": "blocked" if errors else "closed",
+                "sales_subtotal": str(money(set_sales + item_sales)),
+                "received_total": str(money(sales_total)),
+                "payroll_total": str(money(payroll)),
+                "expense_total": str(money(expenses)),
+                "difference": str(money(sales_total - expenses - payroll)),
+                "errors": errors,
+                "replayed": False,
+            }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Daily closing could not be completed") from None
+    finally:
+        conn.close()
+
+
+@app.get("/api/closings/{business_date}")
+def get_daily_closing(business_date: str, user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM daily_closings WHERE store_id=%s AND business_date=%s",
+                (user["store_id"], business_date),
+            )
+            closing = cur.fetchone()
+            if not closing:
+                raise HTTPException(status_code=404, detail="Daily closing not found")
+            cur.execute(
+                """SELECT error_code,description,reference_type,reference_id,resolved_at
+                     FROM closing_errors
+                    WHERE store_id=%s AND daily_closing_id=%s ORDER BY id""",
+                (user["store_id"], closing["id"]),
+            )
+            errors = cur.fetchall()
+            for key in ("settings_snapshot",):
+                if isinstance(closing.get(key), (str, bytes)):
+                    closing[key] = json.loads(closing[key])
+            for key, value in list(closing.items()):
+                if isinstance(value, Decimal):
+                    closing[key] = str(value)
+                elif isinstance(value, datetime):
+                    closing[key] = value.isoformat()
+            return {"closing": closing, "errors": errors}
     finally:
         conn.close()
