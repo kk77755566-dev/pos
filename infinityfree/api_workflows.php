@@ -115,9 +115,9 @@ if ($route==='expenses' && $method==='POST') {
 if ($route === 'settings') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'権限がありません']);
     $minutes=(int)($d['work_rounding_minutes']??15);
-    if(!in_array($minutes,[1,5,10,15,30,60],true)||!in_array($d['tax_mode']??'',['inclusive','exclusive'],true)||!in_array($d['service_mode']??'',['rate','fixed'],true)||!in_array($d['service_basis']??'',['sets_only','items_only','all_subtotal','configured'],true)||!in_array($d['work_rounding_mode']??'',['floor','half_up','ceil'],true))respond(422,['error'=>'設定値が不正です']);
-    $q=$wfdb->prepare('UPDATE store_settings SET tax_enabled=?,tax_rate=?,tax_mode=?,service_enabled=?,service_rate=?,service_mode=?,service_fixed_amount=?,service_taxable=?,service_basis=?,work_rounding_minutes=?,work_rounding_mode=?,updated_by_user_id=? WHERE store_id=?');
-    $q->execute([(int)!!($d['tax_enabled']??false),(float)($d['tax_rate']??0),$d['tax_mode'],(int)!!($d['service_enabled']??false),(float)($d['service_rate']??0),$d['service_mode'],(float)($d['service_fixed_amount']??0),(int)!!($d['service_taxable']??false),$d['service_basis'],$minutes,$d['work_rounding_mode'],(int)$u['id'],$store]);
+    if(!in_array($minutes,[1,5,10,15,30,60],true)||!in_array($d['tax_mode']??'',['inclusive','exclusive'],true)||!in_array($d['service_mode']??'',['rate','fixed'],true)||!in_array($d['service_basis']??'',['sets_only','items_only','all_subtotal','configured'],true)||!in_array($d['work_rounding_mode']??'',['floor','half_up','ceil'],true)||!in_array($d['rounding_mode']??'',['floor','half_up','ceil'],true))respond(422,['error'=>'設定値が不正です']);
+    $q=$wfdb->prepare('UPDATE store_settings SET tax_enabled=?,tax_rate=?,tax_mode=?,service_enabled=?,service_rate=?,service_mode=?,service_fixed_amount=?,service_taxable=?,service_basis=?,rounding_mode=?,work_rounding_minutes=?,work_rounding_mode=?,updated_by_user_id=? WHERE store_id=?');
+    $q->execute([(int)!!($d['tax_enabled']??false),(float)($d['tax_rate']??0),$d['tax_mode'],(int)!!($d['service_enabled']??false),(float)($d['service_rate']??0),$d['service_mode'],(float)($d['service_fixed_amount']??0),(int)!!($d['service_taxable']??false),$d['service_basis'],$d['rounding_mode'],$minutes,$d['work_rounding_mode'],(int)$u['id'],$store]);
     respond(200,['ok'=>true]);
 }
 if ($route==='attendance/break') {
