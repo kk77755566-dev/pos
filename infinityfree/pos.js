@@ -1,5 +1,6 @@
 'use strict';
 const $=id=>document.getElementById(id);
+if(!['owner','manager'].includes(document.body.dataset.role))document.querySelectorAll('[data-manager-only]').forEach(el=>el.hidden=true);
 let csrfToken='', data={tables:[],products:[],sets:[],casts:[]};
 const api=async(route,method='GET',body=null)=>{
  const headers={Accept:'application/json'};if(body!==null)headers['Content-Type']='application/json';if(method!=='GET')headers['X-CSRF-Token']=csrfToken;

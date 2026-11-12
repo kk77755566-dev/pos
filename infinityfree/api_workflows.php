@@ -85,7 +85,7 @@ if ($method === 'GET' && $route === 'reports/sales') {
     respond(200,['from'=>$from,'to'=>$to,'days'=>count($rows),'rows'=>$rows,'summary'=>$sum]);
 }
 if ($method === 'GET' && $route === 'settings') {
-    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'店舗設定の閲覧権限がありません']);
+    if(!in_array($u['role_code'],['owner','manager','staff'],true))respond(403,['error'=>'店舗設定の閲覧権限がありません']);
     $q=$wfdb->prepare('SELECT tax_enabled,tax_rate,tax_mode,service_enabled,service_rate,service_mode,service_fixed_amount,service_taxable,service_basis,rounding_mode,work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');
     $q->execute([$store]); respond(200,['data'=>$q->fetch() ?: []]);
 }
