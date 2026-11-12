@@ -3,7 +3,7 @@ const $=id=>document.getElementById(id);
 let csrfToken='', data={tables:[],products:[],sets:[],casts:[]};
 const api=async(route,method='GET',body=null)=>{
  const headers={Accept:'application/json'};if(body!==null)headers['Content-Type']='application/json';if(method!=='GET')headers['X-CSRF-Token']=csrfToken;
- const res=await fetch('api.php?r='+encodeURIComponent(route),{method,credentials:'same-origin',headers,body:body===null?undefined:JSON.stringify(body)});
+ const [routePath,routeQuery]=route.split('?',2);const url='api.php?r='+encodeURIComponent(routePath)+(routeQuery?'&'+routeQuery:'');const res=await fetch(url,{method,credentials:'same-origin',headers,body:body===null?undefined:JSON.stringify(body)});
  const json=await res.json().catch(()=>({error:'応答を読み取れません'}));if(!res.ok)throw new Error(json.error||'HTTP '+res.status);return json;
 };
 const say=v=>{$('message').textContent=typeof v==='string'?v:JSON.stringify(v,null,2)};
