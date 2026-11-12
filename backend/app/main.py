@@ -651,3 +651,173 @@ def get_cast_payroll(cast_id: int, business_date: str,
             }
     finally:
         conn.close()
+
+
+class PaymentRequest(BaseModel):
+    session_id: int = Field(gt=0)
+    payment_method: str = Field(pattern=r"^(cash|credit_card|qr|electronic_money|transfer|other)$")
+    amount: Decimal = Field(gt=0)
+    idempotency_key: str = Field(min_length=8, max_length=100)
+
+
+def session_bill(cur, store_id: int, session_id: int):
+    cur.execute(
+        """SELECT COALESCE(SUM(price_snapshot),0) AS sets_total
+             FROM session_set_items
+            WHERE store_id=%s AND session_id=%s AND status IN ('active','completed')""",
+        (store_id, session_id),
+    )
+    sets_total = Decimal(str(cur.fetchone()["sets_total"] or 0))
+    cur.execute(
+        """SELECT COALESCE(SUM(oi.quantity * oi.unit_price_snapshot),0) AS items_total
+             FROM orders o JOIN order_items oi
+               ON oi.store_id=o.store_id AND oi.order_id=o.id
+            WHERE o.store_id=%s AND o.session_id=%s
+              AND o.status='confirmed' AND oi.status='active'""",
+        (store_id, session_id),
+    )
+    items_total = Decimal(str(cur.fetchone()["items_total"] or 0))
+    cur.execute("SELECT * FROM store_settings WHERE store_id=%s", (store_id,))
+    settings = cur.fetchone()
+    if not settings:
+        raise HTTPException(status_code=409, detail="Store settings are missing")
+
+    subtotal = sets_total + items_total
+    if settings["service_enabled"]:
+        basis = subtotal
+        if settings["service_basis"] == "sets_only":
+            basis = sets_total
+        elif settings["service_basis"] == "items_only":
+            basis = items_total
+        if settings["service_mode"] == "fixed":
+            service = Decimal(str(settings["service_fixed_amount"]))
+        else:
+            service = money(basis * Decimal(str(settings["service_rate"])) / Decimal("100"))
+    else:
+        service = Decimal("0.00")
+
+    taxable = subtotal + (service if settings["service_taxable"] else Decimal("0"))
+    if settings["tax_enabled"]:
+        rate = Decimal(str(settings["tax_rate"]))
+        if settings["tax_mode"] == "exclusive":
+            tax = money(taxable * rate / Decimal("100"))
+            total = taxable + tax
+        else:
+            tax = money(taxable * rate / (Decimal("100") + rate)) if rate else Decimal("0")
+            total = taxable
+    else:
+        tax = Decimal("0.00")
+        total = subtotal + service
+    return {
+        "sets_total": money(sets_total), "items_total": money(items_total),
+        "subtotal": money(subtotal), "service": money(service),
+        "tax": money(tax), "total": money(total),
+    }
+
+
+@app.get("/api/sessions/{session_id}/bill")
+def get_session_bill(session_id: int, user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    conn = db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM table_sessions WHERE store_id=%s AND id=%s",
+                        (user["store_id"], session_id))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Session not found")
+            bill = session_bill(cur, user["store_id"], session_id)
+            cur.execute(
+                """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
+                    WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                (user["store_id"], session_id),
+            )
+            paid = money(Decimal(str(cur.fetchone()["paid"] or 0)))
+            return {k: str(v) for k, v in bill.items()} | {
+                "paid": str(paid), "balance": str(money(bill["total"] - paid))
+            }
+    finally:
+        conn.close()
+
+
+@app.post("/api/payments")
+def register_payment(body: PaymentRequest, user: dict[str, Any] = Depends(current_user)):
+    if user["role"] not in {"owner", "manager", "staff"}:
+        raise HTTPException(status_code=403, detail="Insufficient permission")
+    store_id = user["store_id"]
+    amount = money(Decimal(str(body.amount)))
+    conn = db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id, table_id, status FROM table_sessions
+                    WHERE store_id=%s AND id=%s FOR UPDATE""",
+                (store_id, body.session_id),
+            )
+            session = cur.fetchone()
+            if not session or session["status"] not in {"open", "checkout"}:
+                raise HTTPException(status_code=409, detail="Session cannot accept payment")
+            cur.execute(
+                "SELECT id FROM payments WHERE store_id=%s AND idempotency_key=%s",
+                (store_id, body.idempotency_key),
+            )
+            old = cur.fetchone()
+            if old:
+                conn.commit()
+                return {"payment_id": old["id"], "replayed": True}
+
+            bill = session_bill(cur, store_id, body.session_id)
+            cur.execute(
+                """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
+                    WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                (store_id, body.session_id),
+            )
+            paid = Decimal(str(cur.fetchone()["paid"] or 0))
+            balance = money(bill["total"] - paid)
+            if amount > balance:
+                raise HTTPException(status_code=422, detail=f"Payment exceeds remaining balance {balance}")
+
+            cur.execute(
+                """INSERT INTO payments
+                   (store_id,session_id,payment_method,amount,status,idempotency_key,
+                    paid_at,created_by_user_id)
+                   VALUES (%s,%s,%s,%s,'completed',%s,UTC_TIMESTAMP(3),%s)""",
+                (store_id, body.session_id, body.payment_method, str(amount),
+                 body.idempotency_key, user["user_id"]),
+            )
+            payment_id = cur.lastrowid
+            new_paid = paid + amount
+            new_balance = money(bill["total"] - new_paid)
+            if new_balance == 0:
+                cur.execute(
+                    "UPDATE table_sessions SET status='closed',ended_at=UTC_TIMESTAMP(3) WHERE store_id=%s AND id=%s",
+                    (store_id, body.session_id),
+                )
+                cur.execute(
+                    "UPDATE tables SET status='available' WHERE store_id=%s AND id=%s",
+                    (store_id, session["table_id"]),
+                )
+            else:
+                cur.execute(
+                    "UPDATE table_sessions SET status='checkout' WHERE store_id=%s AND id=%s",
+                    (store_id, body.session_id),
+                )
+                cur.execute(
+                    "UPDATE tables SET status='checkout' WHERE store_id=%s AND id=%s",
+                    (store_id, session["table_id"]),
+                )
+            conn.commit()
+            return {
+                "payment_id": payment_id, "replayed": False,
+                "paid_total": str(money(new_paid)), "balance": str(new_balance),
+                "session_status": "closed" if new_balance == 0 else "checkout",
+            }
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503, detail="Payment could not be saved") from None
+    finally:
+        conn.close()
