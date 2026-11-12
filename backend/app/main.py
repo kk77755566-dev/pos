@@ -9,7 +9,7 @@ import os
 import uuid
 import json
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 import bcrypt
@@ -506,7 +506,7 @@ def add_session_set(session_id: int, body: SessionSetRequest,
 
 class ClockInRequest(BaseModel):
     cast_id: int = Field(gt=0)
-    business_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    business_date: date
 
 
 class ClockOutRequest(BaseModel):
