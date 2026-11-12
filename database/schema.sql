@@ -302,11 +302,29 @@ CREATE TABLE payments (
   paid_at DATETIME(3) NOT NULL,
   created_by_user_id BIGINT UNSIGNED NOT NULL,
   PRIMARY KEY (id),
+  UNIQUE KEY uq_payments_store_id (store_id,id),
   UNIQUE KEY uq_payments_idempotency (store_id, idempotency_key),
   KEY ix_payments_session (store_id, session_id, status),
   CONSTRAINT fk_payments_session FOREIGN KEY (store_id, session_id) REFERENCES table_sessions(store_id, id),
   CONSTRAINT fk_payments_user FOREIGN KEY (created_by_user_id) REFERENCES users(id),
   CONSTRAINT chk_payments_amount CHECK (amount >= 0)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE payment_refunds (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  store_id BIGINT UNSIGNED NOT NULL,
+  payment_id BIGINT UNSIGNED NOT NULL,
+  amount DECIMAL(12,2) NOT NULL,
+  reason VARCHAR(500) NOT NULL,
+  refunded_at DATETIME(3) NOT NULL,
+  created_by_user_id BIGINT UNSIGNED NOT NULL,
+  idempotency_key VARCHAR(100) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_payment_refunds_idempotency (store_id,idempotency_key),
+  KEY ix_payment_refunds_payment (store_id,payment_id),
+  CONSTRAINT fk_payment_refunds_payment FOREIGN KEY (store_id,payment_id) REFERENCES payments(store_id,id),
+  CONSTRAINT fk_payment_refunds_user FOREIGN KEY (created_by_user_id) REFERENCES users(id),
+  CONSTRAINT chk_payment_refunds_amount CHECK (amount > 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE attendance (
