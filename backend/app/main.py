@@ -739,8 +739,12 @@ def get_session_bill(session_id: int, user: dict[str, Any] = Depends(current_use
                 raise HTTPException(status_code=404, detail="Session not found")
             bill = session_bill(cur, user["store_id"], session_id)
             cur.execute(
-                """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
-                    WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                     FROM payments p
+                     LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
+                                  FROM payment_refunds GROUP BY store_id,payment_id) r
+                       ON r.store_id=p.store_id AND r.payment_id=p.id
+                    WHERE p.store_id=%s AND p.session_id=%s AND p.status IN ('completed','refunded')""",
                 (user["store_id"], session_id),
             )
             paid = money(Decimal(str(cur.fetchone()["paid"] or 0)))
@@ -780,8 +784,12 @@ def register_payment(body: PaymentRequest, user: dict[str, Any] = Depends(curren
 
             bill = session_bill(cur, store_id, body.session_id)
             cur.execute(
-                """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
-                    WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                     FROM payments p
+                     LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
+                                  FROM payment_refunds GROUP BY store_id,payment_id) r
+                       ON r.store_id=p.store_id AND r.payment_id=p.id
+                    WHERE p.store_id=%s AND p.session_id=%s AND p.status IN ('completed','refunded')""",
                 (store_id, body.session_id),
             )
             paid = Decimal(str(cur.fetchone()["paid"] or 0))
@@ -915,13 +923,16 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
             ])
 
             cur.execute(
-                """SELECT COALESCE(SUM(amount),0) AS total,
-                          COALESCE(SUM(CASE WHEN payment_method='cash' THEN amount ELSE 0 END),0) AS cash_total,
-                          COALESCE(SUM(CASE WHEN payment_method='credit_card' THEN amount ELSE 0 END),0) AS card_total,
-                          COALESCE(SUM(CASE WHEN payment_method NOT IN ('cash','credit_card') THEN amount ELSE 0 END),0) AS other_total
+                """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS total,
+                          COALESCE(SUM(CASE WHEN p.payment_method='cash' THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS cash_total,
+                          COALESCE(SUM(CASE WHEN p.payment_method='credit_card' THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS card_total,
+                          COALESCE(SUM(CASE WHEN p.payment_method NOT IN ('cash','credit_card') THEN p.amount-COALESCE(r.refunded,0) ELSE 0 END),0) AS other_total
                      FROM payments p JOIN table_sessions s
                        ON s.store_id=p.store_id AND s.id=p.session_id
-                    WHERE p.store_id=%s AND DATE(s.started_at)=%s AND p.status='completed'""",
+                     LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
+                                  FROM payment_refunds GROUP BY store_id,payment_id) r
+                       ON r.store_id=p.store_id AND r.payment_id=p.id
+                    WHERE p.store_id=%s AND DATE(s.started_at)=%s AND p.status IN ('completed','refunded')""",
                 (store_id, body.business_date),
             )
             sales = cur.fetchone()
@@ -969,8 +980,12 @@ def run_daily_closing(body: DailyCloseRequest, user: dict[str, Any] = Depends(cu
                 service_total += bill["service"]
                 tax_total += bill["tax"]
                 cur.execute(
-                    """SELECT COALESCE(SUM(amount),0) AS paid FROM payments
-                        WHERE store_id=%s AND session_id=%s AND status='completed'""",
+                    """SELECT COALESCE(SUM(p.amount-COALESCE(r.refunded,0)),0) AS paid
+                         FROM payments p
+                         LEFT JOIN (SELECT store_id,payment_id,SUM(amount) AS refunded
+                                      FROM payment_refunds GROUP BY store_id,payment_id) r
+                           ON r.store_id=p.store_id AND r.payment_id=p.id
+                        WHERE p.store_id=%s AND p.session_id=%s AND p.status IN ('completed','refunded')""",
                     (store_id, s["id"]),
                 )
                 paid = Decimal(str(cur.fetchone()["paid"] or 0))
@@ -1663,5 +1678,78 @@ def update_table(table_id: int, body: TableUpdate, user: dict[str, Any] = Depend
         raise
     except pymysql.MySQLError:
         raise HTTPException(status_code=409,detail="Table update failed") from None
+    finally:
+        conn.close()
+
+
+class RefundRequest(BaseModel):
+    amount: Decimal = Field(gt=0)
+    reason: str = Field(min_length=3,max_length=500)
+    idempotency_key: str = Field(min_length=8,max_length=100)
+
+
+@app.post("/api/payments/{payment_id}/refund")
+def refund_payment(payment_id: int, body: RefundRequest,
+                   user: dict[str, Any] = Depends(current_user)):
+    require_management(user["role"])
+    amount=money(Decimal(str(body.amount)))
+    conn=db_connection()
+    try:
+        conn.begin()
+        with conn.cursor() as cur:
+            cur.execute(
+                """SELECT id,session_id,amount,status FROM payments
+                    WHERE store_id=%s AND id=%s FOR UPDATE""",
+                (user["store_id"],payment_id),
+            )
+            payment=cur.fetchone()
+            if not payment:
+                raise HTTPException(status_code=404,detail="Payment not found")
+            cur.execute(
+                "SELECT id,amount FROM payment_refunds WHERE store_id=%s AND idempotency_key=%s",
+                (user["store_id"],body.idempotency_key),
+            )
+            existing=cur.fetchone()
+            if existing:
+                conn.commit()
+                return {"refund_id":existing["id"],"replayed":True}
+            if payment["status"]=="voided":
+                raise HTTPException(status_code=409,detail="Voided payment cannot be refunded")
+            cur.execute(
+                "SELECT COALESCE(SUM(amount),0) AS total FROM payment_refunds WHERE store_id=%s AND payment_id=%s",
+                (user["store_id"],payment_id),
+            )
+            refunded=Decimal(str(cur.fetchone()["total"] or 0))
+            remaining=money(Decimal(str(payment["amount"]))-refunded)
+            if amount>remaining:
+                raise HTTPException(status_code=422,detail=f"Refund exceeds refundable balance {remaining}")
+            cur.execute(
+                """INSERT INTO payment_refunds
+                   (store_id,payment_id,amount,reason,refunded_at,created_by_user_id,idempotency_key)
+                   VALUES (%s,%s,%s,%s,UTC_TIMESTAMP(3),%s,%s)""",
+                (user["store_id"],payment_id,str(amount),body.reason,user["user_id"],body.idempotency_key),
+            )
+            refund_id=cur.lastrowid
+            total_refunded=money(refunded+amount)
+            if total_refunded>=Decimal(str(payment["amount"])):
+                cur.execute("UPDATE payments SET status='refunded' WHERE store_id=%s AND id=%s",
+                            (user["store_id"],payment_id))
+            cur.execute(
+                """INSERT INTO audit_logs (store_id,user_id,action,target_type,target_id,after_json)
+                   VALUES (%s,%s,'payment_refunded','payment',%s,%s)""",
+                (user["store_id"],user["user_id"],payment_id,
+                 json.dumps({"refund_id":refund_id,"amount":str(amount),"reason":body.reason},ensure_ascii=False)),
+            )
+        conn.commit()
+        return {"refund_id":refund_id,"payment_id":payment_id,"refund_amount":str(amount),
+                "total_refunded":str(total_refunded),"remaining_refundable":str(money(remaining-amount)),
+                "payment_status":"refunded" if total_refunded>=Decimal(str(payment["amount"])) else "completed",
+                "replayed":False}
+    except HTTPException:
+        conn.rollback()
+        raise
+    except pymysql.MySQLError:
+        conn.rollback()
+        raise HTTPException(status_code=503,detail="Refund failed") from None
     finally:
         conn.close()
