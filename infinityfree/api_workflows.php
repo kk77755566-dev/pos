@@ -327,7 +327,7 @@ if ($route === 'closings/run') {
     }
     $q=$wfdb->prepare('SELECT COALESCE(SUM(p.amount),0) FROM payments p JOIN table_sessions s ON s.store_id=p.store_id AND s.id=p.session_id WHERE p.store_id=? AND s.business_date=? AND p.status IN ("completed","refunded")');$q->execute([$store,$date]);$paidGross=(float)$q->fetchColumn();
     $q=$wfdb->prepare('SELECT COALESCE(SUM(r.amount),0) FROM payment_refunds r WHERE r.store_id=? AND r.business_date=?');$q->execute([$store,$date]);$refund=(float)$q->fetchColumn();
-    $netPaid=round($paidGross-$refund,2);$netSales=round($salesTotal-$refund,2);$difference=round($netPaid-$netSales,2);
+    $netPaid=round($paidGross-$refund,2);$netSales=round($salesTotal,2);$difference=round($netPaid-$netSales,2);
     if(abs($difference)>0.01)$errors[]=['code'=>'payment_mismatch','description'=>'入金と請求の差額があります（差額 '.$difference.'円）'];
     if(!$cl){$wfdb->prepare("INSERT INTO daily_closings(store_id,business_date,status,settings_snapshot) VALUES(?,?,'pending',?)")->execute([$store,$date,json_encode($cfg,JSON_UNESCAPED_UNICODE)]);$cid=(int)$wfdb->lastInsertId();}
     else{$cid=(int)$cl['id'];$wfdb->prepare('DELETE FROM closing_errors WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);$wfdb->prepare('DELETE FROM daily_closing_details WHERE store_id=? AND daily_closing_id=?')->execute([$store,$cid]);}
