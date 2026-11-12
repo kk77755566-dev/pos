@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, time, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
@@ -74,7 +75,9 @@ def test_basic_pos_flow_with_mysql():
     assert refund.status_code == 200, refund.text
     assert refund.json()["remaining_refundable"] == str(Decimal(bill.json()["total"]) - Decimal("500.00"))
 
-    business_date = datetime.now(timezone.utc).date().isoformat()
+    local_now = datetime.now(ZoneInfo("Asia/Tokyo"))
+    business_day = local_now.date() if local_now.time().replace(tzinfo=None) >= time(6, 30) else local_now.date() - timedelta(days=1)
+    business_date = business_day.isoformat()
     clock_in = client.post("/api/attendance/clock-in", json={
         "cast_id": cast.json()["cast_id"], "business_date": business_date
     })
