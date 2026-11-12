@@ -51,6 +51,7 @@ jobs:
           php -l ../infinityfree/api.php
           php -l ../infinityfree/api_workflows.php
           node --check ../infinityfree/pos.js
+          node ../infinityfree/tests/validate_ui.mjs
           php -l ../infinityfree/config.example.php
           php -l ../infinityfree/bootstrap_owner.php
       - name: Validate InfinityFree schema on MySQL 8
