@@ -12,7 +12,7 @@ This is the PHP/MySQL browser-hosted edition of Girls Bar POS. It is separate fr
 - Payment registration, partial payments and refund records
 - Cast clock-in/clock-out, personal attendance/payroll portal, linked cast login accounts, break-time correction and attendance listing
 - Effective-dated hourly wage history, work-time rounding and back aggregation
-- Expense entry and daily closing checks/reconciliation with saved detail rows
+- Expense entry, daily closing checks/reconciliation with saved detail rows, and closed-day sales reporting
 - CI lint checks, MySQL 8 schema validation and browser JavaScript syntax validation
 
 ## Important limitations before live operation

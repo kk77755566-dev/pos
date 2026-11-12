@@ -74,6 +74,16 @@ if ($method === 'GET' && $route === 'closings') {
     if($c){$q=pdo()->prepare('SELECT error_code,description,resolved_at FROM closing_errors WHERE store_id=? AND daily_closing_id=? ORDER BY id');$q->execute([$store,$c['id']]);$c['errors']=$q->fetchAll();}
     respond(200,['data'=>$c]);
 }
+if ($method === 'GET' && $route === 'reports/sales') {
+    if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'売上分析の閲覧権限がありません']);
+    $from=(string)($_GET['from']??'');$to=(string)($_GET['to']??'');
+    $fd=DateTimeImmutable::createFromFormat('!Y-m-d',$from);$td=DateTimeImmutable::createFromFormat('!Y-m-d',$to);
+    if(!$fd||!$td||$fd->format('Y-m-d')!==$from||$td->format('Y-m-d')!==$to||$from>$to||$fd->diff($td)->days>366)respond(422,['error'=>'期間は1日〜367日で指定してください']);
+    $q=$wfdb->prepare("SELECT business_date,status,sales_subtotal,discount_total,service_total,tax_total,sales_total,refund_total,cash_total,card_total,other_total,payroll_total,expense_total,difference FROM daily_closings WHERE store_id=? AND business_date BETWEEN ? AND ? ORDER BY business_date");
+    $q->execute([$store,$from,$to]);$rows=$q->fetchAll();$sum=[];
+    foreach(['sales_subtotal','discount_total','service_total','tax_total','sales_total','refund_total','cash_total','card_total','other_total','payroll_total','expense_total','difference'] as $key){$sum[$key]=0.0;foreach($rows as $row)$sum[$key]+=(float)$row[$key];}
+    respond(200,['from'=>$from,'to'=>$to,'days'=>count($rows),'rows'=>$rows,'summary'=>$sum]);
+}
 if ($method === 'GET' && $route === 'settings') {
     if(!in_array($u['role_code'],['owner','manager'],true))respond(403,['error'=>'店舗設定の閲覧権限がありません']);
     $q=$wfdb->prepare('SELECT tax_enabled,tax_rate,tax_mode,service_enabled,service_rate,service_mode,service_fixed_amount,service_taxable,service_basis,rounding_mode,work_rounding_minutes,work_rounding_mode FROM store_settings WHERE store_id=?');

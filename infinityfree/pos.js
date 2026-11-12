@@ -33,6 +33,8 @@ $('refund').onclick=()=>run(async()=>{if(!confirm('返金を登録しますか�
 $('clockin').onclick=()=>run(async()=>api('attendance/clock-in','POST',{cast_id:+$('attcast').value}));
 $('clockout').onclick=()=>run(async()=>api('attendance/clock-out','POST',{cast_id:+$('attcast').value}));
 $('confirmPayroll').onclick=()=>run(async()=>api('casts/'+$('paycast').value+'/payroll/confirm?business_date='+encodeURIComponent($('paydate').value),'POST',{}));
+$('reportfrom').value=dateNow();$('reportto').value=dateNow();
+$('runsalesreport').onclick=()=>run(async()=>{const from=$('reportfrom').value,to=$('reportto').value;if(!from||!to)throw Error('集計期間を指定してください');const r=await api('reports/sales?from='+encodeURIComponent(from)+'&to='+encodeURIComponent(to));$('salesReport').textContent=JSON.stringify(r,null,2);return r});
 $('expensedate').value=dateNow();$('addexpense').onclick=()=>run(async()=>api('expenses','POST',{business_date:$('expensedate').value,category:$('expensecategory').value,amount:+$('expenseamount').value,description:$('expensedesc').value}));
 $('close').onclick=()=>run(async()=>{if(!confirm('日締めを実行しますか？未精算・未退勤・入金差異があれば停止します。'))return;return api('closings/run','POST',{business_date:$('closedate').value})});
 $('savesettings').onclick=()=>run(async()=>api('settings','PUT',{tax_enabled:$('taxenabled').checked,tax_rate:+$('taxrate').value,tax_mode:$('taxmode').value,service_enabled:$('serviceenabled').checked,service_rate:+$('servicerate').value,service_mode:$('servicemode').value,service_fixed_amount:+$('servicefixed').value,service_taxable:$('servicetaxable').checked,service_basis:$('servicebasis').value,rounding_mode:$('salesroundmode').value,work_rounding_minutes:+$('roundminutes').value,work_rounding_mode:$('roundmode').value}));

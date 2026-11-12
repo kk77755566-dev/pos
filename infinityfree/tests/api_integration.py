@@ -198,5 +198,7 @@ cast_request(f"api.php?r=sessions/{session_id}/bill", expected=403)
 api("expenses", "POST", {"business_date": business_date, "category": "CI", "amount": 200, "description": "test"}, 201)
 closing = api("closings/run", "POST", {"business_date": business_date}, 200)
 assert closing["status"] == "closed" and abs(float(closing["difference"])) < 0.01
+report = api(f"reports/sales?from={business_date}&to={business_date}")
+assert report["days"] == 1 and report["summary"]["sales_total"] > 0
 api("sessions", "POST", {"table_id": 1, "customer_count": 1, "idempotency_key": "ci-after-close-001"}, 409)
 print("InfinityFree PHP POS API integration: OK")
