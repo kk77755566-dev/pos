@@ -22,29 +22,32 @@ It uses the PHP session created by `index.php`; it does not expose DB credential
 - `GET api.php?r=sets`
 - `GET api.php?r=casts`
 
-## Write routes currently implemented
-- `POST api.php?r=sessions`
-  - JSON: `{"table_id":1,"customer_count":2,"idempotency_key":"session-unique-0001"}`
-  - Locks the table, rejects an occupied table, stores the business date using the store's timezone/day-start, and marks the table occupied.
-- `POST api.php?r=sessions/{session_id}/sets`
-  - JSON: `{"set_menu_id":1}`
-  - Saves the set name, duration and price snapshots and its end time.
-- `POST api.php?r=orders`
-  - JSON: `{"session_id":1,"idempotency_key":"order-unique-0001","items":[{"product_id":1,"quantity":2,"allocations":[{"cast_id":1,"allocation_rate":60},{"cast_id":2,"allocation_rate":40}]}]}`
-  - Saves order/items/back allocations in one transaction. Allocation rates may total at most 100%; any unallocated portion remains store-side.
+## Browser POS workflows
+All routes below are same-origin PHP requests and require the authenticated PHP session. Mutating requests require the session CSRF token in `X-CSRF-Token`.
 
-## Not implemented yet
-Checkout/payment/refunds, cast assignment, attendance, payroll confirmation, daily closing, settings/master-data editing, and the complete touch-first POS interface are not yet available in the PHP edition. The Python/FastAPI backend remains the reference implementation while these workflows are ported and tested.
+### Read routes
+- `GET api.php?r=csrf`
+- `GET api.php?r=tables|products|sets|casts`
+- `GET api.php?r=settings`
+- `GET api.php?r=sessions/{id}/bill`
+- `GET api.php?r=attendance`
+- `GET api.php?r=payroll` (owner/manager)
+- `GET api.php?r=expenses` and `GET api.php?r=closings` (owner/manager)
 
-## Additional workflows (in progress / test before production)
-- `GET api.php?r=settings` and `PUT api.php?r=settings`: read/update tax, service fee and work-time rounding settings. PUT requires `X-CSRF-Token`.
-- `GET api.php?r=sessions/{id}/bill`: current subtotal, tax/service estimate, payments and remaining balance.
-- `POST api.php?r=payments`: register cash/card/QR/etc. payment; closes the session and frees the table only when the calculated balance reaches zero.
-- `POST api.php?r=payments/{payment_id}/refund`: manager/owner refund record with reason and idempotency key.
-- `GET api.php?r=attendance&business_date=YYYY-MM-DD`
-- `POST api.php?r=attendance/clock-in` or `attendance/clock-out`: JSON `{"cast_id":1}`.
-- `GET api.php?r=payroll&business_date=YYYY-MM-DD`
-- `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: blocks if clock-out is missing; snapshots rounded minutes, hourly wage and back pay.
-- `POST api.php?r=closings/run`: JSON `{"business_date":"YYYY-MM-DD"}`; blocks if open sessions, missing clock-outs or unconfirmed calculated payroll remain.
+### Write routes
+- `POST api.php?r=sessions`: open a table session; requires `table_id`, `customer_count`, `idempotency_key`.
+- `POST api.php?r=sessions/{id}/sets`: add a set/extension; requires `set_menu_id` and `idempotency_key`.
+- `POST api.php?r=orders`: add product items and split each item's back among casts; each item's allocations may total at most 100%.
+- `POST|PUT api.php?r=tables|products|sets|casts`: create a master record (POST) or update `/{id}` (PUT); manager/owner only. Deactivation is soft-disable.
+- `PUT api.php?r=settings`: update tax, service fee and work-time rounding settings; manager/owner only.
+- `POST api.php?r=payments`: register cash/card/QR/etc. payment; only closes a session when the calculated balance reaches zero.
+- `POST api.php?r=payments/{payment_id}/refund`: manager/owner refund record; reason and idempotency key required.
+- `POST api.php?r=attendance/clock-in|clock-out`: JSON `{"cast_id":1}`.
+- `POST api.php?r=attendance/break`: manager/owner correction; JSON `{"attendance_id":1,"break_minutes":60}`; only before payroll confirmation.
+- `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: snapshots effective hourly wage, rounded minutes and back; blocks missing clock-out and insufficient recorded statutory break.
+- `POST api.php?r=expenses`: manager/owner expense record with business date, category and amount.
+- `POST api.php?r=closings/run`: manager/owner daily close. Blocks open sessions, missing clock-outs, unconfirmed payroll and payment reconciliation differences; stores closing breakdown and detail rows.
+
+The touch-friendly PHP page is `index.php`; its browser client and styles are `pos.js` and `pos.css`. All data access is scoped to the logged-in store. Do not expose a user-supplied store ID.
 
 The workflows above are an initial port, not a production release. Tax/service treatment, business-day edge cases, refund reconciliation, payroll statutory treatment, and daily-close totals still require full integration tests and review. The current PHP dashboard is not yet the complete touch-first POS UI.
