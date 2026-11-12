@@ -35,3 +35,16 @@ It uses the PHP session created by `index.php`; it does not expose DB credential
 
 ## Not implemented yet
 Checkout/payment/refunds, cast assignment, attendance, payroll confirmation, daily closing, settings/master-data editing, and the complete touch-first POS interface are not yet available in the PHP edition. The Python/FastAPI backend remains the reference implementation while these workflows are ported and tested.
+
+## Additional workflows (in progress / test before production)
+- `GET api.php?r=settings` and `PUT api.php?r=settings`: read/update tax, service fee and work-time rounding settings. PUT requires `X-CSRF-Token`.
+- `GET api.php?r=sessions/{id}/bill`: current subtotal, tax/service estimate, payments and remaining balance.
+- `POST api.php?r=payments`: register cash/card/QR/etc. payment; closes the session and frees the table only when the calculated balance reaches zero.
+- `POST api.php?r=payments/{payment_id}/refund`: manager/owner refund record with reason and idempotency key.
+- `GET api.php?r=attendance&business_date=YYYY-MM-DD`
+- `POST api.php?r=attendance/clock-in` or `attendance/clock-out`: JSON `{"cast_id":1}`.
+- `GET api.php?r=payroll&business_date=YYYY-MM-DD`
+- `POST api.php?r=casts/{cast_id}/payroll/confirm?business_date=YYYY-MM-DD`: blocks if clock-out is missing; snapshots rounded minutes, hourly wage and back pay.
+- `POST api.php?r=closings/run`: JSON `{"business_date":"YYYY-MM-DD"}`; blocks if open sessions, missing clock-outs or unconfirmed calculated payroll remain.
+
+The workflows above are an initial port, not a production release. Tax/service treatment, business-day edge cases, refund reconciliation, payroll statutory treatment, and daily-close totals still require full integration tests and review. The current PHP dashboard is not yet the complete touch-first POS UI.
