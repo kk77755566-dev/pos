@@ -19,7 +19,7 @@ async function reload(){
  $('tables').replaceChildren();
  for(const t of data.tables){const b=document.createElement('button');b.className='table '+t.status;b.textContent=t.table_name+'\n'+t.status+(t.session_id?'\n#'+t.session_id:'');b.onclick=()=>{if(t.session_id){$('session').value=t.session_id;$('ordersession').value=t.session_id;$('billsession').value=t.session_id;say(t.table_name+' / セッション '+t.session_id)}else{$('tableid').value=t.id}};$('tables').append(b)}
  const s=settings.data||{};for(const [id,k] of [['taxenabled','tax_enabled'],['serviceenabled','service_enabled'],['servicetaxable','service_taxable']])$(id).checked=!!Number(s[k]);
- for(const [id,k] of [['taxrate','tax_rate'],['taxmode','tax_mode'],['servicerate','service_rate'],['servicemode','service_mode'],['servicefixed','service_fixed_amount'],['servicebasis','service_basis'],['roundminutes','work_rounding_minutes'],['roundmode','work_rounding_mode']])if(s[k]!==undefined)$(id).value=s[k];
+ for(const [id,k] of [['taxrate','tax_rate'],['taxmode','tax_mode'],['servicerate','service_rate'],['servicemode','service_mode'],['servicefixed','service_fixed_amount'],['servicebasis','service_basis'],['salesroundmode','rounding_mode'],['roundminutes','work_rounding_minutes'],['roundmode','work_rounding_mode']])if(s[k]!==undefined)$(id).value=s[k];
 }
 async function run(fn){try{say(await fn());await reload()}catch(e){say(e.message)}}
 $('refresh').onclick=()=>run(reload);
@@ -34,7 +34,7 @@ $('clockout').onclick=()=>run(async()=>api('attendance/clock-out','POST',{cast_i
 $('confirmPayroll').onclick=()=>run(async()=>api('casts/'+$('paycast').value+'/payroll/confirm?business_date='+encodeURIComponent($('paydate').value),'POST',{}));
 $('expensedate').value=dateNow();$('addexpense').onclick=()=>run(async()=>api('expenses','POST',{business_date:$('expensedate').value,category:$('expensecategory').value,amount:+$('expenseamount').value,description:$('expensedesc').value}));
 $('close').onclick=()=>run(async()=>{if(!confirm('日締めを実行しますか？未精算・未退勤・入金差異があれば停止します。'))return;return api('closings/run','POST',{business_date:$('closedate').value})});
-$('savesettings').onclick=()=>run(async()=>api('settings','PUT',{tax_enabled:$('taxenabled').checked,tax_rate:+$('taxrate').value,tax_mode:$('taxmode').value,service_enabled:$('serviceenabled').checked,service_rate:+$('servicerate').value,service_mode:$('servicemode').value,service_fixed_amount:+$('servicefixed').value,service_taxable:$('servicetaxable').checked,service_basis:$('servicebasis').value,work_rounding_minutes:+$('roundminutes').value,work_rounding_mode:$('roundmode').value}));
+$('savesettings').onclick=()=>run(async()=>api('settings','PUT',{tax_enabled:$('taxenabled').checked,tax_rate:+$('taxrate').value,tax_mode:$('taxmode').value,service_enabled:$('serviceenabled').checked,service_rate:+$('servicerate').value,service_mode:$('servicemode').value,service_fixed_amount:+$('servicefixed').value,service_taxable:$('servicetaxable').checked,service_basis:$('servicebasis').value,rounding_mode:$('salesroundmode').value,work_rounding_minutes:+$('roundminutes').value,work_rounding_mode:$('roundmode').value}));
 $('addtable').onclick=()=>run(async()=>api('tables','POST',{table_name:$('newtable').value,capacity:+$('capacity').value||4}));
 $('addproduct').onclick=()=>run(async()=>api('products','POST',{product_name:$('newproduct').value,selling_price:+$('newprice').value,back_rate:+$('newback').value,back_type:$('newbacktype').value}));
 $('addset').dataset.action='session-set';
