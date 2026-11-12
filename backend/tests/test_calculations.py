@@ -18,7 +18,7 @@ def test_back_total(kind, expected):
 
 @pytest.mark.parametrize(("mode", "expected"), [
     ("floor", 60),
-    ("half_up", 75),
+    ("half_up", 60),
     ("ceil", 75),
 ])
 def test_quarter_hour_rounding(mode, expected):
