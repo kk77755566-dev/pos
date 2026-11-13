@@ -101,14 +101,23 @@ jobs:
           set +e
           response=$(curl -sS -L --max-time 25 -w '\n%{http_code}' https://pos777.site.je/health.php 2>&1)
           curl_rc=$?
+          protocol="https"
           if [ "$curl_rc" -ne 0 ]; then
-            echo "::warning::Live health endpoint could not be reached (curl exit $curl_rc)."
-            printf '%s\n' "$response"
-            exit 0
+            echo "HTTPS health probe failed (curl exit $curl_rc); trying HTTP fallback."
+            https_error="$response"
+            response=$(curl -sS -L --max-time 25 -w '\n%{http_code}' http://pos777.site.je/health.php 2>&1)
+            curl_rc=$?
+            protocol="http"
+            if [ "$curl_rc" -ne 0 ]; then
+              echo "::warning::Live health endpoint could not be reached over HTTPS or HTTP."
+              echo "HTTPS result: $https_error"
+              echo "HTTP result: $response"
+              exit 0
+            fi
           fi
           http_code=$(printf '%s\n' "$response" | tail -n 1)
           body=$(printf '%s\n' "$response" | sed '$d')
-          echo "Live health HTTP status: $http_code"
+          echo "Live health protocol: $protocol; HTTP status: $http_code"
           printf '%s\n' "$body"
           status=$(printf '%s' "$body" | jq -r '.status // "unrecognized_response"' 2>/dev/null)
           case "$status" in
