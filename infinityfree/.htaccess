@@ -1,3 +1,4 @@
+# POS deploy refresh: re-upload hosting access rules without changing behavior.
 Options -Indexes
 DirectoryIndex index.php
 <FilesMatch "^(api_workflows\.php|config\.php|config\.example\.php|bootstrap_owner\.php|schema\.sql|README\.md|API\.md)$">
