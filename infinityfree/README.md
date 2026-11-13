@@ -14,8 +14,8 @@ InfinityFree無料ホスティング向けのPHP/MySQL版です。FastAPI/Docker
 ## 初回セットアップ（本番配置前）
 
 1. InfinityFree Control PanelでMySQLデータベースを作成します。
-2. phpMyAdminから `database/schema.sql` を新規DBにインポートします。既存DBへ無確認でインポートしないでください。
-3. `config.example.php` を元に、サーバー上の `htdocs/config.php` を作成します。DBホスト・DB名・DBユーザー・DBパスワードを入力し、`app_secret` と `setup_token` はそれぞれ64文字以上の別々のランダム文字列にします。config.phpはGitHubへ登録せず、FTPでサーバーへ直接配置します。
+2. phpMyAdminから `infinityfree/database/schema.sql` を新規DBにインポートします。既存DBへ無確認でインポートしないでください。
+3. `infinityfree/config.example.php` を元に、サーバー上の `htdocs/config.php` を作成します。DBホスト・DB名・DBユーザー・DBパスワードを入力し、`app_secret` と `setup_token` はそれぞれ64文字以上の別々のランダム文字列にします。config.phpはGitHubへ登録せず、FTPでサーバーへ直接配置します。
 4. アプリファイルを `htdocs/` に配置します。`config.php` はFTP同期で上書き・削除されない構成です。
 5. HTTPSで `https://あなたのドメイン/health.php` を開き、`database=connected` 相当の応答と `schema_incomplete` でないことを確認します。
 6. `https://あなたのドメイン/setup.php` を開き、config.phpに設定した初回設定キー、店舗コード、店舗名、管理者ID、表示名、12文字以上のパスワードを入力します。初回店舗は一度しか作成できません。
