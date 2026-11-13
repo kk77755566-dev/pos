@@ -3,7 +3,8 @@ declare(strict_types=1);
 
 /*
  * One-time first-store/owner setup for shared hosting where remote MySQL is blocked.
- * Configure a random setup_token (64+ chars) in private config.php before opening this page.
+ * Configure private config.php before opening this page. On an empty database, the
+ * installer applies the bundled, access-denied database/schema.sql exactly once.
  * This endpoint becomes permanently unavailable after the first store is created.
  */
 $configPath = __DIR__ . '/config.php';
@@ -33,6 +34,47 @@ function setupDb(): PDO {
     ]);
     return $db;
 }
+function setupEnsureSchema(PDO $db): void {
+    $tableCount = (int)$db->query(
+        "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_type = 'BASE TABLE'"
+    )->fetchColumn();
+    $required = [
+        'stores','roles','users','store_settings','product_categories','products','set_menus',
+        'casts','cast_pay_rules','tables','customers','table_sessions','session_casts',
+        'session_set_items','session_discounts','orders','order_items','order_item_back_allocations',
+        'payments','session_charge_snapshots','payment_refunds','attendance','payroll_details',
+        'payroll_back_details','expenses','daily_closings','daily_closing_details','closing_errors','audit_logs'
+    ];
+    if ($tableCount === 0) {
+        $schemaPath = __DIR__ . '/database/schema.sql';
+        if (!is_file($schemaPath) || !is_readable($schemaPath)) {
+            throw new RuntimeException('Bundled database schema is missing');
+        }
+        $sql = file_get_contents($schemaPath);
+        if (!is_string($sql) || trim($sql) === '') {
+            throw new RuntimeException('Bundled database schema is empty');
+        }
+        // The checked-in schema contains plain DDL/DML statements and no stored routines.
+        // Execute one statement at a time; never run this against a non-empty database.
+        $statements = preg_split('/;\\s*(?:\\r?\\n|$)/', $sql);
+        if (!is_array($statements)) throw new RuntimeException('Could not parse database schema');
+        foreach ($statements as $statement) {
+            $statement = trim($statement);
+            if ($statement !== '') $db->exec($statement);
+        }
+    }
+    $found = [];
+    $check = $db->prepare('SHOW TABLES LIKE ?');
+    foreach ($required as $table) {
+        $check->execute([$table]);
+        if ($check->fetchColumn()) $found[] = $table;
+    }
+    $missing = array_values(array_diff($required, $found));
+    if ($missing) throw new RuntimeException('Database schema is incomplete: ' . implode(',', $missing));
+    if ((int)$db->query("SELECT COUNT(*) FROM roles WHERE role_code = 'owner'")->fetchColumn() !== 1) {
+        throw new RuntimeException('Owner role seed is missing');
+    }
+}
 function setupH(string $value): string { return htmlspecialchars($value, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'); }
 function setupPage(string $message = '', int $status = 200): never {
     http_response_code($status);
@@ -53,9 +95,7 @@ function setupPage(string $message = '', int $status = 200): never {
 }
 try {
     $db = setupDb();
-    $tables = $db->query("SHOW TABLES LIKE 'stores'")->fetchColumn();
-    $roles = $db->query("SHOW TABLES LIKE 'roles'")->fetchColumn();
-    if (!$tables || !$roles) setupPage('先にdatabase/schema.sqlをphpMyAdminからインポートしてください。', 503);
+    setupEnsureSchema($db);
     if ((int)$db->query('SELECT COUNT(*) FROM stores')->fetchColumn() > 0) setupPage('初回登録は完了済みです。安全のため、この画面は利用できません。', 410);
     $token = (string)($config['setup_token'] ?? '');
     if (strlen($token) < 40 || str_contains($token, 'REPLACE_')) setupPage('config.phpに40文字以上のランダムなsetup_tokenを設定してください。', 503);
