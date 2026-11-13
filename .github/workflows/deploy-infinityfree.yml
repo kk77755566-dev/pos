@@ -1,6 +1,9 @@
-name: Deploy InfinityFree POS (manual)
+name: Deploy InfinityFree POS (explicit trigger only)
 
 on:
+  push:
+    branches:
+      - feature/girlsbar-pos-foundation
   workflow_dispatch:
 
 permissions:
@@ -12,7 +15,7 @@ concurrency:
 
 jobs:
   preflight:
-    if: github.ref == 'refs/heads/feature/girlsbar-pos-foundation'
+    if: github.ref == 'refs/heads/feature/girlsbar-pos-foundation' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -38,6 +41,7 @@ jobs:
           test -f infinityfree/setup.php
   deploy:
     needs: preflight
+    if: github.ref == 'refs/heads/feature/girlsbar-pos-foundation' && (github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]'))
     runs-on: ubuntu-latest
     environment: production
     steps:

@@ -13,10 +13,7 @@ date_default_timezone_set($config['timezone'] ?? 'Asia/Tokyo');
 $isHttps = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
 $hostHeader = (string)($_SERVER['HTTP_HOST'] ?? '');
 $isLocalHost = (bool)preg_match('/^(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i', $hostHeader);
-if (!$isHttps && !$isLocalHost) {
-    $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
-    if ($host !== '') { header('Location: https://' . $host . ($_SERVER['REQUEST_URI'] ?? '/setup.php'), true, 302); exit; }
-}
+if (!$isHttps && !$isLocalHost) { http_response_code(400); exit('安全のためHTTPS接続が必要です。'); }
 session_name('girlsbar_pos_setup');
 session_set_cookie_params(['lifetime'=>0,'path'=>'/','secure'=>$isHttps,'httponly'=>true,'samesite'=>'Strict']);
 session_start();

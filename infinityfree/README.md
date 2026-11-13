@@ -9,7 +9,7 @@ InfinityFree無料ホスティング向けのPHP/MySQL版です。FastAPI/Docker
 - Repository secrets: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`
 - Repository variable（任意）: `FTP_SERVER_DIR`（初期値 `htdocs/`）
 
-`.github/workflows/deploy-infinityfree.yml` は手動実行専用です。開発ブランチ `feature/girlsbar-pos-foundation` のみを対象とし、CIが通った後にFTP配置します。自動pushデプロイはしません。GitHubの手動実行UIに表示するにはworkflowファイルが既定ブランチに存在する必要があるため、mainへ入れるまではこのworkflowを手動実行できない場合があります。mainを変更せずに進める場合は、FTPクライアントからの手動配置が必要です。
+`.github/workflows/deploy-infinityfree.yml` は明示トリガー専用です。通常のpushではデプロイされません。mainを変更せずにデプロイする場合は、開発ブランチへのコミットメッセージに `[deploy]` を含めた場合のみFTP配置します。`workflow_dispatch` はworkflowファイルが既定ブランチに存在する場合にGitHub UIから実行できます。FTP配置は `production` environment の承認設定がある場合、その承認後に進みます。
 
 ## 初回セットアップ（本番配置前）
 
