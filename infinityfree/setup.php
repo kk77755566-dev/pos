@@ -11,7 +11,9 @@ if (!is_file($configPath)) { http_response_code(503); exit('config.php の設定
 $config = require $configPath;
 date_default_timezone_set($config['timezone'] ?? 'Asia/Tokyo');
 $isHttps = !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-if (!$isHttps && !in_array($_SERVER['HTTP_HOST'] ?? '', ['localhost', '127.0.0.1'], true)) {
+$hostHeader = (string)($_SERVER['HTTP_HOST'] ?? '');
+$isLocalHost = (bool)preg_match('/^(localhost|127\\.0\\.0\\.1)(:\\d+)?$/i', $hostHeader);
+if (!$isHttps && !$isLocalHost) {
     $host = preg_replace('/[^A-Za-z0-9.:-]/', '', (string)($_SERVER['HTTP_HOST'] ?? ''));
     if ($host !== '') { header('Location: https://' . $host . ($_SERVER['REQUEST_URI'] ?? '/setup.php'), true, 302); exit; }
 }
@@ -69,8 +71,8 @@ try {
     $login = trim((string)($_POST['login_id'] ?? ''));
     $display = trim((string)($_POST['display_name'] ?? ''));
     $password = (string)($_POST['password'] ?? '');
-    if (!preg_match('/^[A-Za-z0-9_-]{3,40}$/', $code) || $name === '' || mb_strlen($name) > 120 ||
-        !preg_match('/^[A-Za-z0-9_.-]{3,120}$/', $login) || $display === '' || mb_strlen($display) > 120 ||
+    if (!preg_match('/^[A-Za-z0-9_-]{3,40}$/', $code) || $name === '' || strlen($name) > 480 ||
+        !preg_match('/^[A-Za-z0-9_.-]{3,120}$/', $login) || $display === '' || strlen($display) > 480 ||
         strlen($password) < 12 || strlen($password) > 200) {
         setupPage('入力内容を確認してください。パスワードは12〜200文字です。', 422);
     }
