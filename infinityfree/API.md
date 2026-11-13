@@ -6,7 +6,7 @@ It uses the PHP session created by `index.php`; it does not expose DB credential
 ## Setup safety
 - Keep `config.php` out of Git and outside any public download.
 - Import `database/schema.sql` into the hosting database only after confirming it is empty or backed up.
-- Create the first store/owner locally with the CLI-only `bootstrap_owner.php`; never upload that script.
+- Create the first store/owner through the one-time HTTPS `setup.php` page after importing `infinityfree/database/schema.sql` and configuring the private server-side `config.php`. The setup page disables itself after the first store is created.
 - Do not deploy the PHP app to the public site until the full workflow and live DB tests are complete.
 
 ## Request conventions
