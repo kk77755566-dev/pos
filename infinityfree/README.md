@@ -1,37 +1,34 @@
 # InfinityFree PHP/MySQL POS
 
-This is the PHP/MySQL browser-hosted edition of Girls Bar POS. It is separate from the FastAPI backend because InfinityFree free hosting is not a Python application host. The PHP page calls same-origin PHP endpoints and connects to MySQL through PDO.
+InfinityFree無料ホスティング向けのPHP/MySQL版です。FastAPI/Docker版とは別実装で、InfinityFree上ではPHPから同一ホスト内のMySQLへ接続します。
 
-## Implemented in this development branch
-- PHP session login, password verification, CSRF protection and session ID rotation
-- Store-scoped table, product, set-menu and cast master data
-- Touch-oriented responsive POS page for iPad, smartphones and PC
-- Table session opening, set/extension registration and product orders
-- Per-order-item back allocations to one or more casts
-- Tax/service-fee settings and bill calculation
-- Payment registration, partial payments and refund records
-- Cast clock-in/clock-out, personal attendance/payroll portal, linked cast login accounts, break-time correction and attendance listing
-- Effective-dated hourly wage history, work-time rounding, back aggregation and reasoned payroll adjustments
-- Expense entry, daily closing checks/reconciliation with saved detail rows, and closed-day sales reporting
-- CI lint checks, MySQL 8 schema validation and browser JavaScript syntax validation
+## GitHub Actions / FTP設定
 
-## Important limitations before live operation
-- Do not use for actual payroll until an accountant/labor specialist reviews statutory overtime, late-night premiums, holiday premiums, 60-hour overtime premiums, insurance, withholding, paid leave and the applicable employment rules. The current PHP calculation covers base hourly pay + back and statutory break-recording checks only.
-- Tax/service fee configuration is store-wide; per-session discounts are recorded before tax/service calculation and the first payment freezes the final bill snapshot.
-- Full integration testing against a live InfinityFree database and iPad/browser acceptance testing are still required.
-- Do not deploy or use with real customer payments until all tests and the production checklist pass.
+リポジトリのSettings → Secrets and variables → Actionsに次を登録します。
 
-## Prepare hosting (not yet deployed)
-1. Create the InfinityFree hosting account and a MySQL database in its control panel.
-2. Copy `config.example.php` to `config.php` locally. Enter the DB host/name/user/password from the control panel and generate a random app_secret of at least 64 characters. Never commit this file or paste credentials into chat.
-3. Import `database/schema.sql` into the hosting database only after confirming it is empty or backed up.
-4. Create the first store and owner account using `bootstrap_owner.php` locally with PHP CLI. Never upload this script.
-5. Upload these files to `htdocs`: `index.php`, `api.php`, `api_workflows.php`, `pos.js`, `pos.css`, and `.htaccess`. Upload your private `config.php` separately. Do not upload the `database` folder, `config.example.php`, `bootstrap_owner.php`, schema or docs.
-6. Confirm HTTPS, log in with the owner account, add test tables/products/sets/casts, and test the full workflow with dummy data before any real operation.
+- Repository secrets: `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`
+- Repository variable（任意）: `FTP_SERVER_DIR`（初期値 `htdocs/`）
 
-## Hosting and security
-- Keep `config.php` private; root .htaccess denies direct web access to it.
-- InfinityFree free hosting does not allow remote MySQL connections. The PHP code must connect from the same hosting account.
-- The API is same-origin and uses the PHP session plus CSRF token. It never accepts a client-selected store ID.
-- Use prepared statements, store-scoped queries, soft-disable for master data, idempotency keys for retryable sales writes, and transactional payment/payroll/closing operations.
-- Keep the main branch and the original `tax.html` untouched until a separately approved release.
+`.github/workflows/deploy-infinityfree.yml` は手動実行専用です。開発ブランチ `feature/girlsbar-pos-foundation` のみを対象とし、CIが通った後にFTP配置します。自動pushデプロイはしません。GitHubの手動実行UIに表示するにはworkflowファイルが既定ブランチに存在する必要があるため、mainへ入れるまではこのworkflowを手動実行できない場合があります。mainを変更せずに進める場合は、FTPクライアントからの手動配置が必要です。
+
+## 初回セットアップ（本番配置前）
+
+1. InfinityFree Control PanelでMySQLデータベースを作成します。
+2. phpMyAdminから `database/schema.sql` を新規DBにインポートします。既存DBへ無確認でインポートしないでください。
+3. `config.example.php` を元に、サーバー上の `htdocs/config.php` を作成します。DBホスト・DB名・DBユーザー・DBパスワードを入力し、`app_secret` と `setup_token` はそれぞれ64文字以上の別々のランダム文字列にします。config.phpはGitHubへ登録せず、FTPでサーバーへ直接配置します。
+4. アプリファイルを `htdocs/` に配置します。`config.php` はFTP同期で上書き・削除されない構成です。
+5. HTTPSで `https://あなたのドメイン/health.php` を開き、`database=connected` 相当の応答と `schema_incomplete` でないことを確認します。
+6. `https://あなたのドメイン/setup.php` を開き、config.phpに設定した初回設定キー、店舗コード、店舗名、管理者ID、表示名、12文字以上のパスワードを入力します。初回店舗は一度しか作成できません。
+7. `https://あなたのドメイン/index.php` からログインします。初回登録後、setup.phpはDBに店舗が存在することを検知して再利用を拒否します。
+8. テスト用の卓・商品・セット・キャストを登録し、注文、割引、会計、分割入金、返金、勤怠、給与、日締め、売上集計を確認します。テストデータを削除してから営業データを登録します。
+
+## 注意事項・運用保護
+
+- FTP workflowはアプリファイルのみを配置します。サーバー上の `config.php` とDBを削除・上書きしません。同期削除は無効です。
+- `database/schema.sql`、`config.example.php`、`bootstrap_owner.php`、tests、docsは公開領域へ配置しません。
+- 初回登録キーは強いランダム値を使い、初回登録が完了したらconfig.phpから `setup_token` を削除または無効化してください。
+- DBバックアップはInfinityFreeのphpMyAdmin等から取得してください。FTP配置だけではDBバックアップは作成されません。
+- `health.php` はDB接続と必須テーブルの有無だけを返し、接続資格情報や例外内容は公開しません。
+- 実店舗DBへのスキーマ適用前には必ずバックアップし、初回は空のDBを使ってください。既存データの自動マイグレーション機能ではありません。
+- 給与計算は暫定機能です。法定割増、税、源泉徴収、社会保険等の適法性を保証しません。
+- 実決済端末への決済・返金実行は外部決済サービス側の操作です。

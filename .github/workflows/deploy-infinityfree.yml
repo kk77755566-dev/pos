@@ -1,0 +1,74 @@
+name: Deploy InfinityFree POS (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: girlsbar-pos-production-deploy
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.ref == 'refs/heads/feature/girlsbar-pos-foundation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_mysql
+      - name: Validate deployment files
+        run: |
+          php -l infinityfree/index.php
+          php -l infinityfree/api.php
+          php -l infinityfree/api_workflows.php
+          php -l infinityfree/setup.php
+          php -l infinityfree/health.php
+          node --check infinityfree/pos.js
+          node --check infinityfree/pos_cast.js
+          node infinityfree/tests/validate_ui.mjs
+      - name: Ensure private files are not in deployment payload
+        run: |
+          test ! -e infinityfree/config.php
+          test -f infinityfree/config.example.php
+          test -f infinityfree/database/schema.sql
+          test -f infinityfree/setup.php
+  deploy:
+    needs: preflight
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/girlsbar-pos-foundation
+      - name: Verify FTP credentials are configured
+        env:
+          FTP_SERVER: ${{ secrets.FTP_SERVER }}
+          FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          test -n "$FTP_SERVER" || (echo "Missing GitHub Secret: FTP_SERVER" && exit 1)
+          test -n "$FTP_USERNAME" || (echo "Missing GitHub Secret: FTP_USERNAME" && exit 1)
+          test -n "$FTP_PASSWORD" || (echo "Missing GitHub Secret: FTP_PASSWORD" && exit 1)
+      - name: Upload application files (preserve server config and database)
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ vars.FTP_SERVER_DIR || 'htdocs/' }}
+          local-dir: ./infinityfree/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/config.php
+            **/config.example.php
+            **/bootstrap_owner.php
+            **/database/**
+            **/tests/**
+            **/README.md
+            **/API.md

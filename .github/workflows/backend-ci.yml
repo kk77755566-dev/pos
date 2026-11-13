@@ -55,6 +55,8 @@ jobs:
           node ../infinityfree/tests/validate_ui.mjs
           php -l ../infinityfree/config.example.php
           php -l ../infinityfree/bootstrap_owner.php
+          php -l ../infinityfree/setup.php
+          php -l ../infinityfree/health.php
       - name: Validate InfinityFree schema on MySQL 8
         working-directory: .
         run: |
