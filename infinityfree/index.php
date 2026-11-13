@@ -1,4 +1,5 @@
 <?php
+/* POS deploy refresh: force FTP replacement to refresh remote file metadata/permissions. */
 declare(strict_types=1);
 $configPath=__DIR__.'/config.php';
 if(!is_file($configPath)){http_response_code(503);echo '<!doctype html><meta charset="utf-8"><h1>初期設定が必要です</h1><p>管理者がconfig.phpを設定してください。</p>';exit;}
