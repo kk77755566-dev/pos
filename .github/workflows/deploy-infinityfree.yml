@@ -57,6 +57,7 @@ jobs:
           test ! -e infinityfree/config.php
           test -f infinityfree/config.example.php
           test -f infinityfree/database/schema.sql
+          test -f infinityfree/database/.htaccess
           test -f infinityfree/setup.php
   deploy:
     needs: preflight
@@ -91,8 +92,7 @@ jobs:
             **/config.php
             **/config.example.php
             **/bootstrap_owner.php
-            **/database/**
-            **/tests/**
+              **/tests/**
             **/README.md
             **/API.md
       - name: Check live POS database and setup status

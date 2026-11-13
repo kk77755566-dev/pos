@@ -64,10 +64,10 @@ function setupEnsureSchema(PDO $db): void {
         }
     }
     $found = [];
-    $check = $db->prepare('SHOW TABLES LIKE ?');
+    $check = $db->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? AND table_type = 'BASE TABLE'");
     foreach ($required as $table) {
         $check->execute([$table]);
-        if ($check->fetchColumn()) $found[] = $table;
+        if ((int)$check->fetchColumn() > 0) $found[] = $table;
     }
     $missing = array_values(array_diff($required, $found));
     if ($missing) throw new RuntimeException('Database schema is incomplete: ' . implode(',', $missing));

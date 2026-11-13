@@ -13,12 +13,12 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_EMULATE_PREPARES => false,
     ]);
-    $required = ['stores','roles','users','store_settings','tables','table_sessions','orders','payments','attendance','payroll_details','daily_closings'];
+    $required = ['stores','roles','users','store_settings','product_categories','products','set_menus','casts','cast_pay_rules','tables','customers','table_sessions','session_casts','session_set_items','session_discounts','orders','order_items','order_item_back_allocations','payments','session_charge_snapshots','payment_refunds','attendance','payroll_details','payroll_back_details','expenses','daily_closings','daily_closing_details','closing_errors','audit_logs'];
     $found = [];
+    $q = $db->prepare("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? AND table_type = 'BASE TABLE'");
     foreach ($required as $table) {
-        $q = $db->prepare('SHOW TABLES LIKE ?');
         $q->execute([$table]);
-        if ($q->fetchColumn()) $found[] = $table;
+        if ((int)$q->fetchColumn() > 0) $found[] = $table;
     }
     $missing = array_values(array_diff($required, $found));
     if ($missing) { http_response_code(503); echo json_encode(['ok'=>false,'status'=>'schema_incomplete','missing_tables'=>$missing], JSON_UNESCAPED_UNICODE); exit; }

@@ -92,6 +92,10 @@ jobs:
             sleep 1
           done
           python3 infinityfree/tests/setup_integration.py
+      - name: Print first-time setup server log on failure
+        if: failure()
+        working-directory: .
+        run: cat /tmp/girlsbar-pos-setup.log || true
       - name: Run InfinityFree PHP POS API integration
         working-directory: .
         env:
