@@ -24,7 +24,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           for attempt in $(seq 1 60); do
-            run=$(gh run list --workflow .github/workflows/backend-ci.yml --commit "$GITHUB_SHA" --json status,conclusion --jq '.[0] // empty')
+            run=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow .github/workflows/backend-ci.yml --commit "$GITHUB_SHA" --json status,conclusion --jq '.[0] // empty')
             if [ -n "$run" ]; then
               status=$(printf '%s' "$run" | jq -r '.status')
               conclusion=$(printf '%s' "$run" | jq -r '.conclusion // empty')
