@@ -71,7 +71,7 @@ jobs:
           POS_SETUP_TOKEN: ci-setup-token-with-at-least-64-characters-for-tests-only
         run: |
           mysql -h127.0.0.1 -uroot -prootpass -e "CREATE DATABASE girlsbar_pos_setup CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
-          mysql -h127.0.0.1 -uroot -prootpass girlsbar_pos_setup < infinityfree/database/schema.sql
+          # setup.php must create the schema itself on a completely empty database.
           cat > infinityfree/config.php <<'PHP'
           <?php
           return [
