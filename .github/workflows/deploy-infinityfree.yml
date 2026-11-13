@@ -95,3 +95,40 @@ jobs:
             **/tests/**
             **/README.md
             **/API.md
+      - name: Check live POS database and setup status
+        if: always()
+        run: |
+          set +e
+          response=$(curl -sS -L --max-time 25 -w '\n%{http_code}' https://pos777.site.je/health.php 2>&1)
+          curl_rc=$?
+          if [ "$curl_rc" -ne 0 ]; then
+            echo "::warning::Live health endpoint could not be reached (curl exit $curl_rc)."
+            printf '%s\n' "$response"
+            exit 0
+          fi
+          http_code=$(printf '%s\n' "$response" | tail -n 1)
+          body=$(printf '%s\n' "$response" | sed '$d')
+          echo "Live health HTTP status: $http_code"
+          printf '%s\n' "$body"
+          status=$(printf '%s' "$body" | jq -r '.status // "unrecognized_response"' 2>/dev/null)
+          case "$status" in
+            ready)
+              echo "Live POS database is connected and the first store exists."
+              ;;
+            awaiting_first_setup)
+              echo "::warning::Database and schema are ready, but the first store/owner has not been registered."
+              ;;
+            config_missing)
+              echo "::warning::Server-side config.php is missing. Configure the private DB connection file."
+              ;;
+            schema_incomplete)
+              echo "::warning::Database schema is incomplete. Import infinityfree/database/schema.sql into the intended empty database."
+              ;;
+            database_unavailable)
+              echo "::warning::PHP could not connect to the configured database. Check hosting DB settings."
+              ;;
+            *)
+              echo "::warning::Health endpoint returned an unrecognized status: $status"
+              ;;
+          esac
+          echo "Live health probe is diagnostic only; it does not expose or modify credentials or database records."
